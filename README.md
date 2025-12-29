@@ -1,6 +1,13 @@
-# My Live TV 📺
+# Hasikit TV📺
 
 A modern Android IPTV player app built with Jetpack Compose and ExoPlayer that streams live TV channels from M3U playlists.
+This app is based on the source app of [My Live TV](https://github.com/Ravikant99/MyLiveTv), so please check the repo as well
+
+
+
+
+## 📥 Installation
+> **Latest Build:** 🎬 [Download APK via Github v1.0](https://raw.githubusercontent.com/trixsearch/hasikit/main/build/HasikitTv-betaV.apk)
 
 ## Features ✨
 
@@ -255,7 +262,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Author ✍️
 
-Ravi Kant Sharma
+1. Source App: [Ravi Kant Sharma](https://github.com/Ravikant99)
+2. UI and Functionality : [trixsearch](https://github.com/trixsearch/)
 
 ## Acknowledgments 🙏
 

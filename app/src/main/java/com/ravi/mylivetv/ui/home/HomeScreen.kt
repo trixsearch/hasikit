@@ -328,7 +328,7 @@ fun HomeScreen(
                     // Link for Trixsearch
                     Text(
                         text = "@trixsearch",
-                        color = Color.Blue, // Style it to look like a link
+                        color = Color.Gray, // Style it to look like a link
                         modifier = Modifier.clickable {
                             // 3. Trigger the URL open
                             uriHandler.openUri("https://github.com/trixsearch")
@@ -340,9 +340,20 @@ fun HomeScreen(
                     // Link for Ravikant
                     Text(
                         text = "@ravikant99",
-                        color = Color.Blue,
+                        color = Color.Gray,
                         modifier = Modifier.clickable {
                             uriHandler.openUri("https://github.com/ravikant99")
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Link for Ravikant
+                    Text(
+                        text = "Check Project info",
+                        color = Color.LightGray,
+                        modifier = Modifier.clickable {
+                            uriHandler.openUri("https://github.com/trixsearch/hasikit/")
                         }
                     )
                 }
