@@ -49,6 +49,8 @@ android {
     configurations.all {
         exclude(group = "com.google.auto.value", module = "auto-value")
     }
+
+    setProperty("archivesBaseName", "HasikitTv")
 }
 
 dependencies {

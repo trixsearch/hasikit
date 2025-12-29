@@ -156,23 +156,23 @@ fun ChannelScreen(
         drawerContent = {
             ModalDrawerSheet {
                 Spacer(Modifier.height(12.dp))
-                Constants.TABS.forEachIndexed { index, title ->
-                    val icon = when (index) {
-                        0 -> Icons.Default.Category
-                        1 -> Icons.Default.Language
-                        2 -> Icons.Default.Public
-                        else -> Icons.Default.Category
-                    }
-                    NavigationDrawerItem(
-                        icon = { Icon(icon, contentDescription = null) },
-                        label = { Text(title) },
-                        selected = false,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                    )
-                }
+//                Constants.TABS.forEachIndexed { index, title ->
+//                    val icon = when (index) {
+//                        0 -> Icons.Default.Category
+//                        1 -> Icons.Default.Language
+//                        2 -> Icons.Default.Public
+//                        else -> Icons.Default.Category
+//                    }
+//                    NavigationDrawerItem(
+//                        icon = { Icon(icon, contentDescription = null) },
+//                        label = { Text(title) },
+//                        selected = false,
+//                        onClick = {
+//                            scope.launch { drawerState.close() }
+//                        },
+//                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+//                    )
+//                }
 //                Adding Toggle button in Hamburger menu
                 NavigationDrawerItem(
                     icon = {
@@ -201,7 +201,8 @@ fun ChannelScreen(
                 )
             }
         }
-    ) {
+    )
+    {
         Scaffold(
             topBar = {
                 TopAppBar(

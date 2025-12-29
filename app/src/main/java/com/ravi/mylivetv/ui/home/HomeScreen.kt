@@ -157,7 +157,7 @@ fun HomeScreen(
                 Spacer(Modifier.weight(1f))
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Code, contentDescription = "Developer info") },
-                    label = { Text("Developed by @trixsearch") },
+                    label = { Text("Developer info") },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
