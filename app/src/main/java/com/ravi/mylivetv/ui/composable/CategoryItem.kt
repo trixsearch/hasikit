@@ -1,5 +1,7 @@
 package com.ravi.mylivetv.ui.composable
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,12 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -29,6 +32,20 @@ fun CategoryItem(
     isSelected: Boolean = false,
     onClick: () -> Unit
 ) {
+    // Animate background color for a smooth transition between selected and unselected states.
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+        animationSpec = tween(300),
+        label = "categoryItemBackgroundColor"
+    )
+
+    // Animate text color to ensure it's always legible on the changing background.
+    val textColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary,
+        animationSpec = tween(300),
+        label = "categoryItemTextColor"
+    )
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -38,7 +55,7 @@ fun CategoryItem(
                 if (isSelected) {
                     Modifier.border(
                         width = 2.dp,
-                        color = Color(0xFF4CAF50), // Green border for selected
+                        color = MaterialTheme.colorScheme.primary,
                         shape = RoundedCornerShape(8.dp)
                     )
                 } else {
@@ -46,10 +63,7 @@ fun CategoryItem(
                 }
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                Color(0xFFFFDAE0) // Lighter pink for selected
-            else
-                Color(0xFFD177F1) // Light pink
+            containerColor = backgroundColor
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isSelected) 6.dp else 2.dp
@@ -66,17 +80,8 @@ fun CategoryItem(
                 text = text,
                 fontSize = 18.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = Color.Black
+                color = textColor
             )
-
-//            if (isSelected) {
-//                Text(
-//                    text = "✓",
-//                    fontSize = 20.sp,
-//                    fontWeight = FontWeight.Bold,
-//                    color = Color(0xFF4CAF50)
-//                )
-//            }
         }
     }
 }
@@ -85,8 +90,8 @@ fun CategoryItem(
 @Composable
 fun PreviewCategoryItem() {
     Column(modifier = Modifier.padding(16.dp)) {
-        CategoryItem(text = "Animation", isSelected = false, onClick = {})
+        CategoryItem(text = "Animation", isSelected = false, onClick = { })
         Spacer(modifier = Modifier.height(8.dp))
-        CategoryItem(text = "Comedy", isSelected = true, onClick = {})
+        CategoryItem(text = "Comedy", isSelected = true, onClick = { })
     }
 }

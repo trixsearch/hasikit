@@ -1,6 +1,6 @@
 <resources>
     <!-- App Name -->
-    <string name="app_name">MyLiveTv</string>
+    <string name="app_name">HasikitTV</string>
     
     <!-- Screen Titles -->
     <string name="home_screen_title">HomeScreen</string>

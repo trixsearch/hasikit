@@ -15,13 +15,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Install splash screen before super.onCreate()
         installSplashScreen()
-        
+
         super.onCreate(savedInstanceState)
-        
+
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
-            MyLiveTvTheme {
+            val application = application as MyApplication
+            MyLiveTvTheme(darkTheme = application.isDarkTheme.value) {
                 Navigation()
             }
         }
