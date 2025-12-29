@@ -24,6 +24,7 @@ media3Ui = "1.8.0"
 media3ExoplayerHls = "1.8.0"
 
 roomRuntime = "2.8.4"
+composeHotReload = "1.0.0"
 
 
 [libraries]
@@ -67,10 +68,14 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "roomRuntime" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "roomRuntime" }
 
+
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kspPlugin = { id = "com.google.devtools.ksp", version.ref = "kspVersion" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hiltAndroid" }
+#hot reload dependency add
+composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload"}
 

@@ -5,5 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.hilt.android) apply false
     alias(libs.plugins.kspPlugin) apply false
+//    hot reload dependency add
+    alias(libs.plugins.composeHotReload) apply false
 
 }

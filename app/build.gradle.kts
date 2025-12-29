@@ -5,6 +5,8 @@ plugins {
 
     alias(libs.plugins.kspPlugin)
     alias(libs.plugins.hilt.android)
+    //Hot Reload
+    alias(libs.plugins.composeHotReload)
 }
 
 android {
@@ -22,8 +24,12 @@ android {
     }
 
     buildTypes {
-        release {
+        debug {
             isMinifyEnabled = false
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

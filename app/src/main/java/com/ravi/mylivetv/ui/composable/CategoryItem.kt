@@ -49,7 +49,7 @@ fun CategoryItem(
             containerColor = if (isSelected)
                 Color(0xFFFFDAE0) // Lighter pink for selected
             else
-                Color(0xFFFFB6C1) // Light pink
+                Color(0xFFD177F1) // Light pink
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isSelected) 6.dp else 2.dp

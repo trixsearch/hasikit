@@ -364,12 +364,12 @@ fun PlayerScreen(
 }
 
 
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-fun PreviewPlayerScreen() {
-    val navController = rememberNavController()
-    // Note: Preview won't work with HiltViewModel, only for UI reference
-}
+//@Preview(showBackground = true, showSystemUi = true)
+//@Composable
+//fun PreviewPlayerScreen() {
+//    val navController = rememberNavController()
+//    // Note: Preview won't work with HiltViewModel, only for UI reference
+//}
 
 enum class PlayerResizeMode {
     FIT,
