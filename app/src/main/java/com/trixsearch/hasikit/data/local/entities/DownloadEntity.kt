@@ -11,7 +11,8 @@ data class DownloadEntity(
     val state: String,
     val progress: Float,
     val localPath: String?,
-    val errorCode: Int?
+    val errorCode: Int?,
+    val downloadId: Long?
 )
 
 fun DownloadEntity.toDomain() = DownloadTask(
@@ -19,7 +20,8 @@ fun DownloadEntity.toDomain() = DownloadTask(
     state = DownloadState.valueOf(state),
     progress = progress,
     localPath = localPath,
-    errorCode = errorCode
+    errorCode = errorCode,
+    downloadId = downloadId
 )
 
 fun DownloadTask.toEntity() = DownloadEntity(
@@ -27,5 +29,6 @@ fun DownloadTask.toEntity() = DownloadEntity(
     state = state.name,
     progress = progress,
     localPath = localPath,
-    errorCode = errorCode
+    errorCode = errorCode,
+    downloadId = downloadId
 )

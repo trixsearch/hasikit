@@ -9,5 +9,6 @@ data class DownloadTask(
     val state: DownloadState,
     val progress: Float,
     val localPath: String? = null,
-    val errorCode: Int? = null
+    val errorCode: Int? = null,
+    val downloadId: Long? = null
 )

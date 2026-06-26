@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -51,7 +52,11 @@ fun HomeScreen(
                         navController.navigate(Screen.Player.createRoute(video.id))
                     },
                     onDownloadClick = {
-                        viewModel.toggleDownload(video.id)
+                        if (video.isDownloaded) {
+                            viewModel.deleteDownload(video.id)
+                        } else {
+                            viewModel.startDownload(video)
+                        }
                     }
                 )
             }
@@ -97,6 +102,12 @@ fun VideoCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (video.downloadProgress > 0 && video.downloadProgress < 1) {
+                    LinearProgressIndicator(
+                        progress = { video.downloadProgress },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -107,9 +118,15 @@ fun VideoCard(
                         style = MaterialTheme.typography.bodySmall
                     )
                     IconButton(onClick = onDownloadClick) {
+                        val icon = when {
+                            video.isDownloaded -> Icons.Default.DownloadDone
+                            video.downloadProgress > 0 -> Icons.Default.Downloading
+                            else -> Icons.Default.Download
+                        }
                         Icon(
-                            if (video.isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                            contentDescription = "Download"
+                            icon,
+                            contentDescription = "Download",
+                            tint = if (video.isDownloaded) Color.Green else LocalContentColor.current
                         )
                     }
                 }
