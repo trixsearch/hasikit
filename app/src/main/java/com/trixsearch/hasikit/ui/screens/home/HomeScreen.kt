@@ -1,10 +1,14 @@
 package com.trixsearch.hasikit.ui.screens.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -17,12 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.trixsearch.hasikit.domain.model.Video
+import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.ui.navigation.Screen
 
 @Composable
@@ -31,6 +37,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val videos by viewModel.videos.collectAsState()
+    val continueWatching by viewModel.continueWatching.collectAsState()
 
     Scaffold(
         topBar = {
@@ -45,6 +52,32 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (continueWatching.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        "Continue Watching",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(continueWatching) { (video, progress) ->
+                            ContinueWatchingCard(video, progress) {
+                                navController.navigate(Screen.Player.createRoute(video.id))
+                            }
+                        }
+                    }
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        "Explore",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                    )
+                }
+            }
+
             items(videos) { video ->
                 VideoCard(
                     video = video,
@@ -60,6 +93,43 @@ fun HomeScreen(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun ContinueWatchingCard(video: Video, progress: WatchProgress, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .width(200.dp)
+            .clickable { onClick() },
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column {
+            Box {
+                AsyncImage(
+                    model = video.thumbnail,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentScale = ContentScale.Crop
+                )
+                val percent = if (progress.duration > 0) progress.lastPosition.toFloat() / progress.duration else 0f
+                LinearProgressIndicator(
+                    progress = { percent },
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
+                    color = Color.Red,
+                    trackColor = Color.Gray.copy(alpha = 0.5f)
+                )
+            }
+            Text(
+                video.title,
+                modifier = Modifier.padding(8.dp),
+                maxLines = 1,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

@@ -13,10 +13,40 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import com.trixsearch.hasikit.domain.model.WatchProgress
+import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.player.HasikitPlayer
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class PlayerViewModel @Inject constructor(
+    private val repository: VideoRepository
+) : ViewModel() {
+    fun saveProgress(videoId: String, position: Long, duration: Long) {
+        viewModelScope.launch {
+            repository.saveWatchProgress(
+                WatchProgress(
+                    videoId = videoId,
+                    lastPosition = position,
+                    duration = duration,
+                    lastWatchedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    suspend fun getInitialPosition(videoId: String): Long {
+        return repository.getWatchProgress(videoId)?.lastPosition ?: 0L
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -24,28 +54,56 @@ fun PlayerScreen(
     videoId: String,
     player: HasikitPlayer,
     videoUrl: String,
-    onBack: () -> Unit
+    localPath: String?,
+    onBack: () -> Unit,
+    viewModel: PlayerViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
     val isPlaying by player.isPlaying.collectAsState()
+    val isBuffering by player.isBuffering.collectAsState()
+    val error by player.error.collectAsState()
+    
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var showControls by remember { mutableStateOf(true) }
 
-    DisposableEffect(videoId) {
+    val playUrl = if (localPath != null) "file://$localPath" else videoUrl
+
+    LaunchedEffect(videoId) {
+        val startPos = viewModel.getInitialPosition(videoId)
         player.initialize()
-        player.playVideo(videoUrl)
+        player.playVideo(playUrl, startPos)
+    }
+
+    DisposableEffect(videoId) {
         onDispose {
+            val p = player.getPlayerInstance()
+            if (p != null) {
+                viewModel.saveProgress(videoId, p.currentPosition, p.duration)
+            }
             player.release()
         }
     }
 
+    // Save progress periodically
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
+            delay(5000)
             val p = player.getPlayerInstance()
-            currentPosition = p?.currentPosition ?: 0L
-            duration = p?.duration?.coerceAtLeast(0L) ?: 0L
-            delay(1000)
+            if (p != null && p.duration > 0) {
+                viewModel.saveProgress(videoId, p.currentPosition, p.duration)
+            }
+        }
+    }
+
+    // Update UI position
+    LaunchedEffect(Unit) {
+        while (true) {
+            val p = player.getPlayerInstance()
+            if (p != null) {
+                currentPosition = p.currentPosition
+                duration = p.duration.coerceAtLeast(0L)
+            }
+            delay(500)
         }
     }
 
@@ -57,8 +115,26 @@ fun PlayerScreen(
                     useController = false
                 }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().clickable { showControls = !showControls }
         )
+
+        if (isBuffering) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White)
+        }
+
+        if (error != null) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(error!!, color = Color.White)
+                Button(onClick = { player.playVideo(playUrl, currentPosition) }) {
+                    Text("Retry")
+                }
+            }
+        }
 
         if (showControls) {
             Box(
@@ -81,7 +157,7 @@ fun PlayerScreen(
                         Icon(Icons.Default.Replay10, contentDescription = "Rewind", tint = Color.White, modifier = Modifier.size(48.dp))
                     }
                     IconButton(
-                        onClick = { if (isPlaying) player.pause() else player.playVideo(videoUrl, currentPosition) },
+                        onClick = { if (isPlaying) player.pause() else player.resume() },
                         modifier = Modifier.size(64.dp)
                     ) {
                         Icon(
@@ -99,7 +175,7 @@ fun PlayerScreen(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(16.dp)
+                        .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -109,7 +185,7 @@ fun PlayerScreen(
                         Text(formatTime(duration), color = Color.White)
                     }
                     Slider(
-                        value = currentPosition.toFloat(),
+                        value = currentPosition.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
                         onValueChange = { player.seekTo(it.toLong()) },
                         valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
                         colors = SliderDefaults.colors(
@@ -125,6 +201,7 @@ fun PlayerScreen(
 }
 
 private fun formatTime(ms: Long): String {
+    if (ms < 0) return "00:00"
     val totalSeconds = ms / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60

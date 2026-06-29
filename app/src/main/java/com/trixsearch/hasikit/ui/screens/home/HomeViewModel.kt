@@ -15,13 +15,23 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.trixsearch.hasikit.domain.model.WatchProgress
+import kotlinx.coroutines.flow.*
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: VideoRepository,
     private val downloadManager: HasikitDownloadManager
 ) : ViewModel() {
 
-    // For MVP, we combine local DB videos with download status
+    val continueWatching: StateFlow<List<Pair<Video, WatchProgress>>> = repository.getAllWatchProgress()
+        .map { progressList ->
+            progressList.take(5).mapNotNull { progress ->
+                val video = repository.getVideoById(progress.videoId) ?: SampleData.videos.find { it.id == progress.videoId }
+                video?.let { it to progress }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val videos: StateFlow<List<Video>> = combine(
         repository.getAllVideos(),
         downloadManager.downloadTasks
