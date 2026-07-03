@@ -80,4 +80,10 @@ class VideoRepositoryImpl @Inject constructor(
     override suspend fun deleteDownload(videoId: String) {
         videoDao.deleteDownload(videoId)
     }
+
+    override suspend fun clearAllStorage() {
+        videoDao.deleteAllDownloads()
+        videoDao.deleteAllVideos()
+        videoDao.deleteAllWatchProgress()
+    }
 }

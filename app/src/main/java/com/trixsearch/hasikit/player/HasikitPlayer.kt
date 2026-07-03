@@ -2,9 +2,15 @@ package com.trixsearch.hasikit.player
 
 import android.content.Context
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -15,8 +21,10 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val TAG = "HasikitPlayer"
+private const val TAG = "PLAYER_DEBUG"
 private const val USER_AGENT = "Hasikit/1.0 (Android; ExoPlayer)"
+
+data class TrackInfo(val groupIndex: Int, val trackIndex: Int, val label: String, val isSelected: Boolean)
 
 @Singleton
 class HasikitPlayer @Inject constructor(
@@ -33,6 +41,18 @@ class HasikitPlayer @Inject constructor(
     private val _error = MutableStateFlow<PlaybackError?>(null)
     val error: StateFlow<PlaybackError?> = _error
 
+    private val _playbackSpeed = MutableStateFlow(1f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed
+
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode
+
+    private val _audioTracks = MutableStateFlow<List<TrackInfo>>(emptyList())
+    val audioTracks: StateFlow<List<TrackInfo>> = _audioTracks
+
+    private val _subtitleTracks = MutableStateFlow<List<TrackInfo>>(emptyList())
+    val subtitleTracks: StateFlow<List<TrackInfo>> = _subtitleTracks
+
     data class PlaybackError(
         val message: String,
         val httpStatusCode: Int? = null,
@@ -41,37 +61,28 @@ class HasikitPlayer @Inject constructor(
 
     fun initialize() {
         if (exoPlayer != null) {
-            Log.d(TAG, "initialize() skipped — already initialized")
+            Log.d(TAG, "[INIT] skipped — ExoPlayer already initialized")
             return
         }
+        Log.d(TAG, "[INIT] building ExoPlayer | userAgent=$USER_AGENT")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
             .setUserAgent(USER_AGENT)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Accept" to "video/*, */*",
-                    "Accept-Encoding" to "identity"
-                )
-            )
+            .setDefaultRequestProperties(mapOf("Accept" to "video/*, */*", "Accept-Encoding" to "identity"))
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(httpDataSourceFactory)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
 
         exoPlayer = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
             .apply {
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        _isPlaying.value = isPlaying
-                        Log.d(TAG, "isPlaying=$isPlaying pos=${currentPosition}ms dur=${duration}ms")
-                    }
-
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        val stateName = when (playbackState) {
+                        val name = when (playbackState) {
                             Player.STATE_IDLE -> "IDLE"
                             Player.STATE_BUFFERING -> "BUFFERING"
                             Player.STATE_READY -> "READY"
@@ -79,27 +90,64 @@ class HasikitPlayer @Inject constructor(
                             else -> "UNKNOWN($playbackState)"
                         }
                         _isBuffering.value = playbackState == Player.STATE_BUFFERING
-                        Log.d(TAG, "playbackState=$stateName dur=${duration}ms")
+                        Log.d(TAG, "[STATE] $name | pos=${currentPosition}ms | dur=${duration}ms | bufferedPct=${bufferedPercentage}%")
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        _isPlaying.value = isPlaying
+                        Log.d(TAG, "[PLAYING] isPlaying=$isPlaying | pos=${currentPosition}ms | dur=${duration}ms")
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        Log.d(TAG, "[MEDIA_ITEM] uri=${mediaItem?.localConfiguration?.uri}")
+                    }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        val audio = mutableListOf<TrackInfo>()
+                        val subs = mutableListOf<TrackInfo>()
+                        tracks.groups.forEachIndexed { gi, group ->
+                            val type = group.type
+                            val format = if (group.length > 0) group.getTrackFormat(0) else null
+                            val selected = (0 until group.length).any { group.isTrackSelected(it) }
+                            val label = format?.label ?: format?.language ?: "Track ${gi + 1}"
+                            Log.d(TAG, "[TRACKS] group[$gi] type=$type selected=$selected mime=${format?.sampleMimeType} lang=${format?.language}")
+                            when (type) {
+                                C.TRACK_TYPE_AUDIO -> audio.add(TrackInfo(gi, 0, label, selected))
+                                C.TRACK_TYPE_TEXT -> subs.add(TrackInfo(gi, 0, label, selected))
+                            }
+                        }
+                        _audioTracks.value = audio
+                        _subtitleTracks.value = subs
+                    }
+
+                    override fun onVideoSizeChanged(videoSize: VideoSize) {
+                        Log.d(TAG, "[VIDEO_SIZE] ${videoSize.width}x${videoSize.height}")
+                    }
+
+                    override fun onRenderedFirstFrame() {
+                        Log.d(TAG, "[FIRST_FRAME] pos=${exoPlayer?.currentPosition}ms")
+                    }
+
+                    override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                        Log.d(TAG, "[DISCONTINUITY] reason=$reason from=${old.positionMs}ms to=${new.positionMs}ms")
                     }
 
                     override fun onPlayerError(e: PlaybackException) {
                         val httpCode = extractHttpCode(e)
-                        val userMsg = buildUserMessage(e, httpCode)
-                        Log.e(
-                            TAG,
-                            "ExoPlayer error: errorCode=${e.errorCode} http=$httpCode msg=${e.message}",
-                            e
-                        )
+                        Log.e(TAG, "[ERROR] errorCode=${e.errorCode} http=$httpCode msg=${e.message}", e)
                         _error.value = PlaybackError(
                             message = buildTechnicalMessage(e, httpCode),
                             httpStatusCode = httpCode,
-                            userMessage = userMsg
+                            userMessage = buildUserMessage(e, httpCode)
                         )
+                    }
+
+                    override fun onPlayerErrorChanged(error: PlaybackException?) {
+                        if (error == null) Log.d(TAG, "[ERROR_CLEARED]")
                     }
                 })
             }
-
-        Log.d(TAG, "ExoPlayer initialized with USER_AGENT=$USER_AGENT")
+        Log.d(TAG, "[INIT] ExoPlayer ready")
     }
 
     private fun extractHttpCode(e: PlaybackException): Int? {
@@ -112,24 +160,27 @@ class HasikitPlayer @Inject constructor(
     }
 
     private fun buildUserMessage(e: PlaybackException, httpCode: Int?): String = when {
-        httpCode == 403 -> "Access denied (403 Forbidden). This video may be protected."
-        httpCode == 404 -> "Video not found (404). The URL may be invalid."
-        httpCode == 429 -> "Too many requests (429). Please wait and retry."
-        httpCode != null && httpCode >= 500 -> "Server error ($httpCode). Please try again later."
+        httpCode == 403 -> "Access denied (403). This video may be protected."
+        httpCode == 404 -> "Video not found (404)."
+        httpCode == 429 -> "Too many requests (429). Please wait."
+        httpCode != null && httpCode >= 500 -> "Server error ($httpCode)."
         httpCode != null -> "HTTP error $httpCode."
-        e.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
-            "Network connection failed. Check your internet connection."
-        e.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
-            "Connection timed out. Check your internet connection."
-        e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
-            "Bad HTTP response from server."
-        e.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
-            "Unsupported video format."
-        e.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ->
-            "Unsupported stream format."
-        e.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
-            "Failed to initialize video decoder."
-        else -> "Playback failed. Please retry."
+        isSslError(e) -> "SSL/TLS error."
+        e.errorCode == PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED -> "Cleartext HTTP blocked."
+        e.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> "Network connection failed."
+        e.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Connection timed out."
+        e.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> "Unsupported video format."
+        e.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "Decoder init failed."
+        else -> "Playback failed (${e.errorCode})."
+    }
+
+    private fun isSslError(e: PlaybackException): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is javax.net.ssl.SSLException) return true
+            cause = cause.cause
+        }
+        return false
     }
 
     private fun buildTechnicalMessage(e: PlaybackException, httpCode: Int?): String {
@@ -139,43 +190,111 @@ class HasikitPlayer @Inject constructor(
         return parts.joinToString(" | ")
     }
 
-    fun playVideo(url: String, startPosition: Long = 0) {
+    private fun mimeTypeForUrl(url: String): String? = when {
+        url.endsWith(".mp4", ignoreCase = true) || url.endsWith(".m4v", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+        url.endsWith(".webm", ignoreCase = true) -> MimeTypes.VIDEO_WEBM
+        url.endsWith(".mkv", ignoreCase = true) -> MimeTypes.VIDEO_MATROSKA
+        url.endsWith(".mov", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+        else -> null
+    }
+
+    fun playVideo(url: String, startPosition: Long = 0L, videoId: String = "", title: String = "") {
         _error.value = null
-        Log.d(TAG, "playVideo url=$url startPos=${startPosition}ms")
+        val mime = mimeTypeForUrl(url)
+        val isLocal = url.startsWith("file://")
+        Log.d(TAG, "[PLAY] VIDEO_ID=$videoId TITLE=$title SOURCE=${if (isLocal) "LOCAL" else "REMOTE"} URL=$url MIME=${mime ?: "auto"} START=${startPosition}ms")
+
+        val mediaItem = if (mime != null) MediaItem.Builder().setUri(url).setMimeType(mime).build()
+        else MediaItem.fromUri(url)
+
         exoPlayer?.apply {
-            setMediaItem(MediaItem.fromUri(url))
+            setMediaItem(mediaItem)
             seekTo(startPosition)
             prepare()
             play()
-        } ?: Log.e(TAG, "playVideo called but ExoPlayer is null — call initialize() first")
+            Log.d(TAG, "[PLAY] prepare()+play() called")
+        } ?: Log.e(TAG, "[PLAY] ExoPlayer is null")
     }
 
-    fun pause() {
-        Log.d(TAG, "pause pos=${exoPlayer?.currentPosition}ms")
-        exoPlayer?.pause()
-    }
-
-    fun resume() {
-        Log.d(TAG, "resume pos=${exoPlayer?.currentPosition}ms")
-        exoPlayer?.play()
-    }
+    fun pause() { exoPlayer?.pause(); Log.d(TAG, "[PAUSE] pos=${exoPlayer?.currentPosition}ms") }
+    fun resume() { exoPlayer?.play(); Log.d(TAG, "[RESUME] pos=${exoPlayer?.currentPosition}ms") }
 
     fun seekTo(position: Long) {
         val clamped = position.coerceAtLeast(0L)
-        Log.d(TAG, "seekTo ${clamped}ms")
+        Log.d(TAG, "[SEEK] ${clamped}ms")
         exoPlayer?.seekTo(clamped)
+    }
+
+    fun setSpeed(speed: Float) {
+        _playbackSpeed.value = speed
+        exoPlayer?.playbackParameters = PlaybackParameters(speed)
+        Log.d(TAG, "[SPEED] $speed")
+    }
+
+    fun cycleRepeatMode() {
+        val next = when (exoPlayer?.repeatMode ?: Player.REPEAT_MODE_OFF) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
+            else -> Player.REPEAT_MODE_OFF
+        }
+        exoPlayer?.repeatMode = next
+        _repeatMode.value = next
+        Log.d(TAG, "[REPEAT] mode=$next")
+    }
+
+    fun selectAudioTrack(groupIndex: Int) {
+        val player = exoPlayer ?: return
+        val params = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+        val tracks = player.currentTracks
+        if (groupIndex < tracks.groups.size) {
+            val group = tracks.groups[groupIndex]
+            params.addOverride(androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, 0))
+        }
+        player.trackSelectionParameters = params.build()
+        Log.d(TAG, "[AUDIO_TRACK] selected groupIndex=$groupIndex")
+    }
+
+    fun selectSubtitleTrack(groupIndex: Int?) {
+        val player = exoPlayer ?: return
+        val params = player.trackSelectionParameters.buildUpon()
+        if (groupIndex == null) {
+            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            Log.d(TAG, "[SUBTITLE] disabled")
+        } else {
+            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            val tracks = player.currentTracks
+            if (groupIndex < tracks.groups.size) {
+                val group = tracks.groups[groupIndex]
+                params.addOverride(androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, 0))
+            }
+            Log.d(TAG, "[SUBTITLE] selected groupIndex=$groupIndex")
+        }
+        player.trackSelectionParameters = params.build()
+    }
+
+    // 0-100 = system volume, 101-200 = ExoPlayer software boost (1x-2x)
+    fun setVolume(percent: Int) {
+        val clamped = percent.coerceIn(0, 200)
+        val exoVol = if (clamped <= 100) 1f else clamped / 100f
+        exoPlayer?.volume = exoVol
+        Log.d(TAG, "[VOLUME] $clamped% exoVol=$exoVol")
     }
 
     fun getCurrentPosition(): Long = exoPlayer?.currentPosition ?: 0L
     fun getDuration(): Long = exoPlayer?.duration?.coerceAtLeast(0L) ?: 0L
+    fun getBufferedPercentage(): Int = exoPlayer?.bufferedPercentage ?: 0
 
     fun release() {
-        Log.d(TAG, "release pos=${exoPlayer?.currentPosition}ms")
+        Log.d(TAG, "[RELEASE] pos=${exoPlayer?.currentPosition}ms")
         exoPlayer?.release()
         exoPlayer = null
         _isPlaying.value = false
         _isBuffering.value = false
         _error.value = null
+        _audioTracks.value = emptyList()
+        _subtitleTracks.value = emptyList()
+        Log.d(TAG, "[RELEASE] done")
     }
 
     fun getPlayerInstance(): Player? = exoPlayer

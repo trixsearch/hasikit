@@ -2,18 +2,23 @@ package com.trixsearch.hasikit
 
 import android.app.Application
 import android.util.Log
+import com.trixsearch.hasikit.telegram.service.TelegramClientService
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 private const val TAG = "HasikitApp"
 
 @HiltAndroidApp
 class HasikitApp : Application() {
 
+    @Inject lateinit var telegramClientService: TelegramClientService
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application started — packageName=$packageName")
         Log.d(TAG, "Android SDK=${android.os.Build.VERSION.SDK_INT} device=${android.os.Build.MODEL}")
         logStorageInfo()
+        telegramClientService.initClient()
     }
 
     private fun logStorageInfo() {

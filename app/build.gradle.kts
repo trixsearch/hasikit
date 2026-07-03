@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,6 +12,11 @@ android {
     namespace = "com.trixsearch.hasikit"
     compileSdk = 35
 
+    val localProps = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) load(f.inputStream())
+    }
+
     defaultConfig {
         applicationId = "com.trixsearch.hasikit"
         minSdk = 30
@@ -18,7 +25,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
+
+        buildConfigField("int", "TELEGRAM_API_ID", localProps.getProperty("TELEGRAM_API_ID", "0"))
+        buildConfigField("String", "TELEGRAM_API_HASH", "\"${localProps.getProperty("TELEGRAM_API_HASH", "")}\"")
+        buildConfigField("String", "TELEGRAM_SOURCE_CHANNEL", "\"${localProps.getProperty("TELEGRAM_SOURCE_CHANNEL", "")}\"")
+        buildConfigField("boolean", "TELEGRAM_DEMO_MODE", localProps.getProperty("TELEGRAM_DEMO_MODE", "true"))    }
 
     buildTypes {
         release {
@@ -38,6 +49,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -50,6 +62,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     
     // Hilt
@@ -82,6 +95,10 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.datastore.preferences)
+
+    // TDLib — local AAR placed at app/libs/tdlib.aar
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

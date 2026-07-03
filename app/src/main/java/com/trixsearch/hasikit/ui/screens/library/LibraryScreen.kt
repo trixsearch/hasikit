@@ -4,16 +4,21 @@ import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -94,67 +99,79 @@ fun LibraryScreen(
 ) {
     val downloadedItems by viewModel.downloadedItems.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredDownloaded = remember(downloadedItems, searchQuery) {
+        if (searchQuery.isBlank()) downloadedItems
+        else downloadedItems.filter {
+            it.video.title.contains(searchQuery, ignoreCase = true) ||
+                it.video.localPath?.contains(searchQuery, ignoreCase = true) == true
+        }
+    }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Library") }) }
-    ) { padding ->
-        if (downloadedItems.isEmpty() && activeDownloads.isEmpty()) {
-            Box(
+        topBar = {
+            Column(
                 modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.VideoLibrary,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "No downloads yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "Download videos from the Home screen to watch offline",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(Modifier.width(8.dp))
+                    Text("Library", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                }
+                if (downloadedItems.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search downloads…", style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp)) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Default.Clear, "Clear", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        )
                     )
                 }
             }
+        }
+    ) { padding ->
+        if (downloadedItems.isEmpty() && activeDownloads.isEmpty()) {
+            EmptyLibraryState(modifier = Modifier.padding(padding))
         } else {
             LazyColumn(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 if (activeDownloads.isNotEmpty()) {
-                    item {
-                        Text(
-                            "Downloading",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
+                    item { SectionLabel("Downloading", Icons.Default.Downloading) }
                     items(activeDownloads, key = { it.video.id + "_active" }) { item ->
                         ActiveDownloadCard(item = item)
                     }
                 }
 
-                if (downloadedItems.isNotEmpty()) {
-                    item {
-                        Text(
-                            "Downloaded",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                        )
-                    }
-                    items(downloadedItems, key = { it.video.id }) { item ->
+                if (filteredDownloaded.isNotEmpty()) {
+                    item { SectionLabel("Downloaded (${filteredDownloaded.size})", Icons.Default.DownloadDone) }
+                    items(filteredDownloaded, key = { it.video.id }) { item ->
                         DownloadedVideoCard(
                             item = item,
                             onPlay = {
@@ -165,6 +182,19 @@ fun LibraryScreen(
                             onRedownload = { viewModel.retryDownload(item.video) }
                         )
                     }
+                } else if (searchQuery.isNotBlank()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                Text("No results for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -172,35 +202,84 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun SectionLabel(title: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun EmptyLibraryState(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Default.VideoLibrary,
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("No downloads yet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Download videos from Home to watch offline",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 fun ActiveDownloadCard(item: LibraryItem) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .height(80.dp)
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
                 model = item.video.thumbnail,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(56.dp)
-                    .padding(end = 12.dp),
+                    .size(width = 80.dp, height = 56.dp)
+                    .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Crop
             )
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     item.video.title,
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
                 val progress = item.task?.progress ?: 0f
                 LinearProgressIndicator(
                     progress = { progress },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "${(progress * 100).toInt()}% — ${if (item.task?.state == DownloadState.PAUSED) "Paused" else "Downloading"}",
+                    "${(progress * 100).toInt()}% — ${if (item.task?.state == DownloadState.PAUSED) "Paused" else "Downloading…"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -217,63 +296,110 @@ fun DownloadedVideoCard(
     onRedownload: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
+    // Stable progress value — never drives layout changes
+    val watchPct = remember(item.watchProgress) {
+        val wp = item.watchProgress
+        if (wp != null && wp.duration > 0) wp.lastPosition.toFloat() / wp.duration else 0f
+    }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        // Fixed height row — never changes regardless of watch progress
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(88.dp)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail — fixed size, progress bar overlaid inside Box
+            Box(
+                modifier = Modifier
+                    .size(width = 96.dp, height = 64.dp)
+                    .clip(RoundedCornerShape(8.dp))
             ) {
-                Box {
-                    AsyncImage(
-                        model = item.video.thumbnail,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(width = 80.dp, height = 56.dp),
-                        contentScale = ContentScale.Crop
+                AsyncImage(
+                    model = item.video.thumbnail,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                // Downloaded badge — always visible
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(3.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1DB954)
+                ) {
+                    Icon(
+                        Icons.Default.DownloadDone,
+                        null,
+                        tint = Color.White,
+                        modifier = Modifier.padding(3.dp).size(10.dp)
                     )
-                    item.watchProgress?.let { wp ->
-                        if (wp.duration > 0) {
-                            LinearProgressIndicator(
-                                progress = { wp.progress },
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .height(3.dp),
-                                color = Color.Red,
-                                trackColor = Color.Gray.copy(alpha = 0.4f)
-                            )
-                        }
-                    }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        item.video.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                // Progress bar — always rendered, just 0 width when no progress
+                LinearProgressIndicator(
+                    progress = { watchPct },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = Color.Red,
+                    trackColor = Color.Gray.copy(alpha = 0.3f)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            // Text info — fixed layout, no conditional children
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    item.video.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Storage, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(3.dp))
                     Text(
                         formatBytes(item.video.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Watch time — inline, no extra row
                     item.watchProgress?.let { wp ->
                         if (wp.duration > 0) {
                             Text(
-                                "Watched ${formatTime(wp.lastPosition)} / ${formatTime(wp.duration)}",
+                                "  •  ${formatTime(wp.lastPosition)}/${formatTime(wp.duration)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
                             )
                         }
                     }
                 }
-                IconButton(onClick = onPlay) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.primary)
+            }
+            // Actions — fixed column, always same size
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                IconButton(onClick = onPlay, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 }
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                IconButton(onClick = { showDeleteDialog = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -282,13 +408,14 @@ fun DownloadedVideoCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Delete Download") },
-            text = { Text("Delete \"${item.video.title}\"? This will remove the local file.") },
+            text = { Text("Remove \"${item.video.title}\" from your device?") },
             confirmButton = {
-                TextButton(onClick = {
-                    onDelete()
-                    showDeleteDialog = false
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                Button(
+                    onClick = { onDelete(); showDeleteDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }

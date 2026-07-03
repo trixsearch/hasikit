@@ -51,4 +51,13 @@ interface VideoDao {
 
     @Query("DELETE FROM downloads WHERE videoId = :videoId")
     suspend fun deleteDownload(videoId: String)
+
+    @Query("DELETE FROM downloads")
+    suspend fun deleteAllDownloads()
+
+    @Query("DELETE FROM videos")
+    suspend fun deleteAllVideos()
+
+    @Query("DELETE FROM watch_progress")
+    suspend fun deleteAllWatchProgress()
 }

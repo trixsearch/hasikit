@@ -36,17 +36,25 @@ class HomeViewModel @Inject constructor(
         repository.getAllVideos(),
         downloadManager.downloadTasks
     ) { dbVideos, downloadTasks ->
-        val baseVideos = dbVideos.ifEmpty { SampleData.videos }
-        baseVideos.map { video ->
-            val task = downloadTasks[video.id]
-            val isDownloaded = video.isDownloaded || task?.state == DownloadState.COMPLETED
-            val localPath = video.localPath ?: task?.localPath
+        // Always start from the full SampleData catalog so no video ever disappears.
+        // DB rows only contribute download/offline state — they never replace the catalog.
+        val dbById = dbVideos.associateBy { it.id }
+
+        SampleData.videos.map { sample ->
+            val db = dbById[sample.id]
+            val task = downloadTasks[sample.id]
+
+            val isDownloaded = db?.isDownloaded == true || task?.state == DownloadState.COMPLETED
+            val localPath = db?.localPath ?: task?.localPath
             val downloadProgress = when {
                 isDownloaded -> 1f
                 task != null -> task.progress
                 else -> 0f
             }
-            video.copy(
+
+            Log.d(TAG, "video id=${sample.id} isDownloaded=$isDownloaded localPath=$localPath progress=$downloadProgress")
+
+            sample.copy(
                 isDownloaded = isDownloaded,
                 localPath = localPath,
                 downloadProgress = downloadProgress

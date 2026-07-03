@@ -24,4 +24,5 @@ interface VideoRepository {
     suspend fun getDownload(videoId: String): DownloadTask?
     suspend fun saveDownload(download: DownloadTask)
     suspend fun deleteDownload(videoId: String)
+    suspend fun clearAllStorage()
 }
