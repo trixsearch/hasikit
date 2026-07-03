@@ -5,18 +5,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.DownloadDone
-import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,11 +22,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.ui.navigation.Screen
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
@@ -40,14 +37,13 @@ fun HomeScreen(
     val continueWatching by viewModel.continueWatching.collectAsState()
 
     Scaffold(
-        topBar = {
-            @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-            TopAppBar(title = { Text("Hasikit") })
-        }
+        topBar = { TopAppBar(title = { Text("Hasikit") }) }
     ) { padding ->
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize(),
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -81,15 +77,10 @@ fun HomeScreen(
             items(videos) { video ->
                 VideoCard(
                     video = video,
-                    onClick = {
-                        navController.navigate(Screen.Player.createRoute(video.id))
-                    },
+                    onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
                     onDownloadClick = {
-                        if (video.isDownloaded) {
-                            viewModel.deleteDownload(video.id)
-                        } else {
-                            viewModel.startDownload(video)
-                        }
+                        if (video.isDownloaded) viewModel.deleteDownload(video.id)
+                        else viewModel.startDownload(video)
                     }
                 )
             }
@@ -107,18 +98,19 @@ fun ContinueWatchingCard(video: Video, progress: WatchProgress, onClick: () -> U
     ) {
         Column {
             Box {
-                AsyncImage(
-                    model = video.thumbnail,
-                    contentDescription = null,
+                VideoThumbnail(
+                    url = video.thumbnail,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(100.dp),
-                    contentScale = ContentScale.Crop
+                        .height(100.dp)
                 )
                 val percent = if (progress.duration > 0) progress.lastPosition.toFloat() / progress.duration else 0f
                 LinearProgressIndicator(
                     progress = { percent },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(4.dp),
                     color = Color.Red,
                     trackColor = Color.Gray.copy(alpha = 0.5f)
                 )
@@ -148,20 +140,22 @@ fun VideoCard(
     ) {
         Column {
             Box {
-                AsyncImage(
-                    model = video.thumbnail,
-                    contentDescription = null,
+                VideoThumbnail(
+                    url = video.thumbnail,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp),
-                    contentScale = ContentScale.Crop
+                        .height(120.dp)
                 )
                 if (video.isDownloaded) {
                     Icon(
                         Icons.Default.DownloadDone,
                         contentDescription = null,
                         tint = Color.Green,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small)
+                            .padding(2.dp)
                     )
                 }
             }
@@ -172,10 +166,12 @@ fun VideoCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (video.downloadProgress > 0 && video.downloadProgress < 1) {
+                if (video.downloadProgress > 0f && video.downloadProgress < 1f) {
                     LinearProgressIndicator(
                         progress = { video.downloadProgress },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
                     )
                 }
                 Row(
@@ -184,13 +180,13 @@ fun VideoCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${video.size / 1024 / 1024} MB",
+                        text = formatBytes(video.size),
                         style = MaterialTheme.typography.bodySmall
                     )
                     IconButton(onClick = onDownloadClick) {
                         val icon = when {
                             video.isDownloaded -> Icons.Default.DownloadDone
-                            video.downloadProgress > 0 -> Icons.Default.Downloading
+                            video.downloadProgress > 0f -> Icons.Default.Downloading
                             else -> Icons.Default.Download
                         }
                         Icon(
@@ -203,4 +199,49 @@ fun VideoCard(
             }
         }
     }
+}
+
+@Composable
+fun VideoThumbnail(url: String?, modifier: Modifier = Modifier) {
+    SubcomposeAsyncImage(
+        model = url,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Crop,
+        loading = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+        },
+        error = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.BrokenImage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+    )
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0)
+    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }

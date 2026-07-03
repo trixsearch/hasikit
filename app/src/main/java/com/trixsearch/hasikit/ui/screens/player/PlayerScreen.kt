@@ -2,6 +2,7 @@ package com.trixsearch.hasikit.ui.screens.player
 
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -10,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -43,9 +43,8 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    suspend fun getInitialPosition(videoId: String): Long {
-        return repository.getWatchProgress(videoId)?.lastPosition ?: 0L
-    }
+    suspend fun getInitialPosition(videoId: String): Long =
+        repository.getWatchProgress(videoId)?.lastPosition ?: 0L
 }
 
 @OptIn(UnstableApi::class)
@@ -61,12 +60,12 @@ fun PlayerScreen(
     val isPlaying by player.isPlaying.collectAsState()
     val isBuffering by player.isBuffering.collectAsState()
     val error by player.error.collectAsState()
-    
+
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var showControls by remember { mutableStateOf(true) }
 
-    val playUrl = if (localPath != null) "file://$localPath" else videoUrl
+    val playUrl = if (!localPath.isNullOrBlank()) "file://$localPath" else videoUrl
 
     LaunchedEffect(videoId) {
         val startPos = viewModel.getInitialPosition(videoId)
@@ -76,41 +75,31 @@ fun PlayerScreen(
 
     DisposableEffect(videoId) {
         onDispose {
-            val p = player.getPlayerInstance()
-            if (p != null) {
-                viewModel.saveProgress(videoId, p.currentPosition, p.duration)
-            }
+            viewModel.saveProgress(videoId, player.getCurrentPosition(), player.getDuration())
             player.release()
         }
     }
 
-    // Save progress periodically
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             delay(5000)
-            val p = player.getPlayerInstance()
-            if (p != null && p.duration > 0) {
-                viewModel.saveProgress(videoId, p.currentPosition, p.duration)
-            }
+            val dur = player.getDuration()
+            if (dur > 0) viewModel.saveProgress(videoId, player.getCurrentPosition(), dur)
         }
     }
 
-    // Update UI position
     LaunchedEffect(Unit) {
         while (true) {
-            val p = player.getPlayerInstance()
-            if (p != null) {
-                currentPosition = p.currentPosition
-                duration = p.duration.coerceAtLeast(0L)
-            }
+            currentPosition = player.getCurrentPosition()
+            duration = player.getDuration()
             delay(500)
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
-            factory = {
-                PlayerView(it).apply {
+            factory = { ctx ->
+                PlayerView(ctx).apply {
                     this.player = player.getPlayerInstance()
                     useController = false
                 }
@@ -124,12 +113,20 @@ fun PlayerScreen(
 
         if (error != null) {
             Column(
-                modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(48.dp))
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(error!!, color = Color.White)
+                Text(error!!.userMessage, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(4.dp))
+                if (error!!.httpStatusCode != null) {
+                    Text("HTTP ${error!!.httpStatusCode}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(error!!.message, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(12.dp))
                 Button(onClick = { player.playVideo(playUrl, currentPosition) }) {
                     Text("Retry")
                 }
@@ -201,7 +198,7 @@ fun PlayerScreen(
 }
 
 private fun formatTime(ms: Long): String {
-    if (ms < 0) return "00:00"
+    if (ms <= 0) return "00:00"
     val totalSeconds = ms / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
