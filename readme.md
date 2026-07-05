@@ -611,4 +611,4 @@ Repository:
 
 # 🚀 One-Line Description
 
-> **Hasikit is a Telegram-powered, Netflix-inspired streaming platform featuring VLC-level media playback, advanced subtitle customization, offline downloads, and a highly customizable user experience.**
+> **Hasikit is a Telegram-powered, Netflix-Amazon Prime-inspired streaming platform featuring VLC-level media playback, advanced subtitle customization, offline downloads, and a highly customizable user experience.**
