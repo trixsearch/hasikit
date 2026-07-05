@@ -29,7 +29,7 @@ android {
         buildConfigField("int", "TELEGRAM_API_ID", localProps.getProperty("TELEGRAM_API_ID", "0"))
         buildConfigField("String", "TELEGRAM_API_HASH", "\"${localProps.getProperty("TELEGRAM_API_HASH", "")}\"")
         buildConfigField("String", "TELEGRAM_SOURCE_CHANNEL", "\"${localProps.getProperty("TELEGRAM_SOURCE_CHANNEL", "")}\"")
-        buildConfigField("boolean", "TELEGRAM_DEMO_MODE", localProps.getProperty("TELEGRAM_DEMO_MODE", "true"))    }
+        buildConfigField("boolean", "TELEGRAM_DEMO_MODE", localProps.getProperty("TELEGRAM_DEMO_MODE", "true").trim())    }
 
     buildTypes {
         release {
