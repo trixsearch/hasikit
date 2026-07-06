@@ -70,6 +70,14 @@ private const val LONG_PRESS_THRESHOLD_MS = 500L
 
 private val SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
+enum class VideoFitMode(val label: String, val resizeMode: Int) {
+    FIT("Fit", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    FILL("Fill", AspectRatioFrameLayout.RESIZE_MODE_FILL),
+    ZOOM("Zoom", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+    FIXED_WIDTH("16:9", AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH),
+    FIXED_HEIGHT("4:3", AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT),
+}
+
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val repository: VideoRepository,
@@ -91,23 +99,40 @@ class PlayerViewModel @Inject constructor(
 
     suspend fun resolvePlayUrl(telegramFileId: String): String? = withContext(Dispatchers.IO) {
         val fileId = telegramFileId.toLongOrNull()?.toInt() ?: return@withContext null
+        Log.d(TAG, "resolvePlayUrl fileId=$fileId")
+
+        // Check if already fully downloaded
         val existing = getFileInfo(fileId)
         if (existing?.local?.isDownloadingCompleted == true && existing.local.path.isNotBlank()) {
+            Log.d(TAG, "resolvePlayUrl fileId=$fileId already complete path=${existing.local.path}")
             return@withContext "file://${existing.local.path}"
         }
-        telegramClientService.send(TdApi.DownloadFile(fileId, 32, 0, 0, false)) { result ->
+
+        // Start download with high priority (1 = highest)
+        telegramClientService.send(TdApi.DownloadFile(fileId, 1, 0, 0, false)) { result ->
             when (result) {
-                is TdApi.File  -> Log.d(TAG, "resolvePlayUrl started fileId=$fileId path=${result.local.path}")
-                is TdApi.Error -> Log.e(TAG, "resolvePlayUrl error ${result.code}: ${result.message}")
+                is TdApi.File -> Log.d(TAG, "resolvePlayUrl DownloadFile started fileId=$fileId path=${result.local.path}")
+                is TdApi.Error -> Log.e(TAG, "resolvePlayUrl DownloadFile error ${result.code}: ${result.message}")
             }
         }
+
+        // Wait until TDLib has downloaded enough to start streaming
+        // We need: isDownloadingActive=true AND path is set AND downloadedSize > 0
         var attempts = 0
-        while (attempts < 60) {
+        while (attempts < 90) { // 90s max
             val file = getFileInfo(fileId)
             if (file != null) {
                 val local = file.local
-                if (local.isDownloadingCompleted && local.path.isNotBlank()) return@withContext "file://${local.path}"
-                if (local.isDownloadingActive && local.downloadedSize > 0 && local.path.isNotBlank()) return@withContext "file://${local.path}"
+                when {
+                    local.isDownloadingCompleted && local.path.isNotBlank() -> {
+                        Log.d(TAG, "resolvePlayUrl complete fileId=$fileId path=${local.path}")
+                        return@withContext "file://${local.path}"
+                    }
+                    local.isDownloadingActive && local.path.isNotBlank() && local.downloadedSize > 0 -> {
+                        Log.d(TAG, "resolvePlayUrl streaming fileId=$fileId path=${local.path} downloaded=${local.downloadedSize}")
+                        return@withContext "file://${local.path}"
+                    }
+                }
             }
             delay(1000)
             attempts++
@@ -157,6 +182,8 @@ fun PlayerScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showAudioMenu by remember { mutableStateOf(false) }
     var showSubtitleMenu by remember { mutableStateOf(false) }
+    var showFitMenu by remember { mutableStateOf(false) }
+    var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
     var volumeFeedback by remember { mutableStateOf<String?>(null) }
     var brightnessFeedback by remember { mutableStateOf<String?>(null) }
@@ -247,6 +274,7 @@ fun PlayerScreen(
             update = { view ->
                 val instance = player.getPlayerInstance()
                 if (view.player !== instance) view.player = instance
+                view.resizeMode = fitMode.resizeMode
                 view.scaleX = videoScale; view.scaleY = videoScale
             },
             modifier = Modifier.fillMaxSize()
@@ -383,6 +411,18 @@ fun PlayerScreen(
                 ) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
                     Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    // Fit mode
+                    Box {
+                        IconButton(onClick = { showFitMenu = true }) { Icon(Icons.Default.AspectRatio, "Fit", tint = Color.White) }
+                        DropdownMenu(expanded = showFitMenu, onDismissRequest = { showFitMenu = false }) {
+                            VideoFitMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label, fontWeight = if (fitMode == mode) FontWeight.Bold else FontWeight.Normal) },
+                                    onClick = { fitMode = mode; showFitMenu = false }
+                                )
+                            }
+                        }
+                    }
                     // Speed button → bottom sheet
                     TextButton(onClick = { showSpeedSheet = true }) {
                         Text("${playbackSpeed}x", color = Color.White, fontSize = 13.sp)

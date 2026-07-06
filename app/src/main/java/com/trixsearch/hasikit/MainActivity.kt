@@ -1,5 +1,6 @@
 package com.trixsearch.hasikit
 
+import android.content.Intent
 import android.Manifest
 import android.app.PictureInPictureParams
 import android.content.Context
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -76,6 +76,10 @@ class MainActivity : ComponentActivity() {
         }
 
         enableEdgeToEdge()
+
+        // Handle external video intent (ACTION_VIEW from other apps)
+        val externalVideoUri = if (intent?.action == Intent.ACTION_VIEW) intent.data else null
+
         setContent {
             val themeString by themeDataStore.data
                 .map { it[THEME_KEY] ?: AppTheme.DARK.name }
@@ -90,6 +94,19 @@ class MainActivity : ComponentActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
                 val showBottomBar = currentRoute !in HIDE_BOTTOM_NAV_ROUTES
+
+                // Navigate to external video player if launched via ACTION_VIEW
+                LaunchedEffect(externalVideoUri) {
+                    if (externalVideoUri != null) {
+                        val videoId = "external_${System.currentTimeMillis()}"
+                        // Store the URI in player directly and navigate
+                        player.initialize()
+                        player.playVideo(url = externalVideoUri.toString(), videoId = videoId, title = externalVideoUri.lastPathSegment ?: "Video")
+                        navController.navigate(Screen.Player.createRoute(videoId)) {
+                            popUpTo(Screen.Home.route)
+                        }
+                    }
+                }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),

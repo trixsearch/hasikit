@@ -10,5 +10,6 @@ data class Video(
     val size: Long,
     val localPath: String? = null,
     val isDownloaded: Boolean = false,
-    val downloadProgress: Float = 0f
+    val downloadProgress: Float = 0f,
+    val sourceLabel: String = ""
 )

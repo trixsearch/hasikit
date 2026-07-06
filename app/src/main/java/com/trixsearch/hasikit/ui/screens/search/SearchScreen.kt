@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +18,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import com.trixsearch.hasikit.domain.model.Video
+import com.trixsearch.hasikit.telegram.config.TelegramSource
+import com.trixsearch.hasikit.telegram.config.TelegramSourceConfig
 import com.trixsearch.hasikit.telegram.domain.model.TelegramMedia
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
 import com.trixsearch.hasikit.ui.navigation.Screen
@@ -24,20 +27,22 @@ import com.trixsearch.hasikit.ui.screens.home.HorizontalVideoCard
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 
-private const val SOURCE_CHANNEL = "testhasikit"
-
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val channelRepository: TelegramChannelRepository
+    private val channelRepository: TelegramChannelRepository,
+    private val sourceConfig: TelegramSourceConfig
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
-    private val _chatId = MutableStateFlow<Long?>(null)
+    // Cache resolved chat IDs per source identifier
+    private val chatIdCache = mutableMapOf<String, Long>()
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val results: StateFlow<List<Video>> = _query
@@ -45,34 +50,43 @@ class SearchViewModel @Inject constructor(
         .flatMapLatest { q ->
             if (q.isBlank()) return@flatMapLatest flowOf(emptyList())
             flow {
-                val chatId = getOrResolveChatId() ?: run {
-                    emit(emptyList()); return@flow
+                val allSources = buildList {
+                    addAll(sourceConfig.officialSources)
+                    addAll(sourceConfig.userSourcesFlow.first())
                 }
-                channelRepository.searchChannelMedia(chatId, q)
-                    .onSuccess { emit(it.map { m -> m.toVideo() }) }
-                    .onFailure { emit(emptyList()) }
+                val allResults = allSources.map { source ->
+                    async {
+                        val chatId = resolveChatId(source) ?: return@async emptyList()
+                        channelRepository.searchChannelMedia(chatId, q)
+                            .getOrNull()
+                            ?.map { it.toVideo(source) }
+                            ?: emptyList()
+                    }
+                }.awaitAll().flatten()
+                emit(allResults)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setQuery(q: String) { _query.value = q }
 
-    private suspend fun getOrResolveChatId(): Long? {
-        _chatId.value?.let { return it }
-        return channelRepository.resolveChannel(SOURCE_CHANNEL)
+    private suspend fun resolveChatId(source: TelegramSource): Long? {
+        chatIdCache[source.identifier]?.let { return it }
+        return channelRepository.resolveSource(source)
             .getOrNull()
-            ?.also { _chatId.value = it }
+            ?.also { chatIdCache[source.identifier] = it }
     }
 }
 
-private fun TelegramMedia.toVideo() = Video(
-    id             = messageId.toString(),
-    title          = title.ifBlank { fileName },
-    thumbnail      = null,
-    videoUrl       = "",
+private fun TelegramMedia.toVideo(source: TelegramSource) = Video(
+    id = "${channelId}_${messageId}",
+    title = title.ifBlank { fileName },
+    thumbnail = null,
+    videoUrl = "",
     telegramFileId = fileId.toString(),
-    duration       = duration.toLong() * 1000L,
-    size           = size
+    duration = duration.toLong() * 1000L,
+    size = size,
+    sourceLabel = source.displayName
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,50 +99,64 @@ fun SearchScreen(
     val results by viewModel.results.collectAsState()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Search") }) }
-    ) { padding ->
-        Column(
-            modifier = Modifier.padding(padding).fillMaxSize()
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { viewModel.setQuery(it) },
-                placeholder = { Text("Search @testhasikit…") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setQuery("") }) {
-                            Icon(Icons.Default.Clear, "Clear")
-                        }
-                    }
-                },
+        topBar = {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
-
-            when {
-                query.isBlank() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Type to search channel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Text("Search", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { viewModel.setQuery(it) },
+                    placeholder = { Text("Search all sources…") },
+                    leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setQuery("") }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.Clear, "Clear", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    )
+                )
+            }
+        }
+    ) { padding ->
+        when {
+            query.isBlank() -> {
+                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Type to search all sources", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                results.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            }
+            results.isEmpty() -> {
+                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
                         Text("No results for \"$query\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                else -> {
-                    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                        items(results, key = { it.id }) { video ->
-                            HorizontalVideoCard(
-                                video = video,
-                                onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
-                                onDownloadClick = {}
-                            )
-                        }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.padding(padding),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(results, key = { "search_${it.id}" }) { video ->
+                        HorizontalVideoCard(
+                            video = video,
+                            onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
+                            onDownloadClick = {}
+                        )
                     }
                 }
             }

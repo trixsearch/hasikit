@@ -35,6 +35,7 @@ import com.trixsearch.hasikit.download.HasikitDownloadManager
 import com.trixsearch.hasikit.themeDataStore
 import com.trixsearch.hasikit.ui.theme.AppTheme
 import com.trixsearch.hasikit.THEME_KEY
+import com.trixsearch.hasikit.telegram.config.TelegramSource
 import com.trixsearch.hasikit.telegram.config.TelegramSourceConfig
 import com.trixsearch.hasikit.telegram.domain.model.TelegramUser
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
@@ -180,7 +181,27 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // Telegram source channel
+    // Telegram source channel (legacy single-source)
+    val officialSources = telegramSourceConfig.officialSources
+
+    val userSources: StateFlow<List<TelegramSource>> = telegramSourceConfig.userSourcesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addUserSource(identifier: String, displayName: String) {
+        viewModelScope.launch {
+            telegramSourceConfig.addUserSource(
+                TelegramSource(identifier = identifier.trim(), displayName = displayName.trim())
+            )
+        }
+    }
+
+    fun removeUserSource(identifier: String) {
+        viewModelScope.launch {
+            telegramSourceConfig.removeUserSource(identifier)
+        }
+    }
+
+    // Legacy single source
     private val _sourceChannel = MutableStateFlow(telegramSourceConfig.sourceChannel)
     val sourceChannel: StateFlow<String> = _sourceChannel
 
@@ -235,7 +256,8 @@ fun SettingsScreen(
     val storageUsed by viewModel.storageUsed.collectAsState()
     val downloadCount by viewModel.downloadCount.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
-    val sourceChannel by viewModel.sourceChannel.collectAsState()
+    val userSources by viewModel.userSources.collectAsState()
+    val officialSources = viewModel.officialSources
 
     var searchQuery by remember { mutableStateOf("") }
     var showQualityDialog by remember { mutableStateOf(false) }
@@ -312,7 +334,12 @@ fun SettingsScreen(
                 items(visibleSections, key = { it.id }) { section ->
                     when (section.id) {
                         "account" -> AccountSection(currentUser, onLogout = { showLogoutDialog = true }, onForceDelete = { showForceDeleteDialog = true })
-                        "sources" -> TelegramSourcesSection(sourceChannel, onSave = viewModel::setSourceChannel)
+                        "sources" -> TelegramSourcesSection(
+                            officialSources = officialSources,
+                            userSources = userSources,
+                            onAddSource = viewModel::addUserSource,
+                            onRemoveSource = viewModel::removeUserSource
+                        )
                         "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
                         "player" -> PlayerSection(autoPlay, streamingQuality, viewModel::setAutoPlay, onQualityClick = { showQualityDialog = true })
                         "downloads" -> DownloadsSection(wifiOnly, viewModel::setWifiOnly)
@@ -459,37 +486,96 @@ fun SettingsScreen(
 // ─── Section composables ──────────────────────────────────────────────────────
 
 @Composable
-private fun TelegramSourcesSection(sourceChannel: String, onSave: (String) -> Unit) {
-    var editValue by remember(sourceChannel) { mutableStateOf(sourceChannel) }
-    var editing by remember { mutableStateOf(false) }
+private fun TelegramSourcesSection(
+    officialSources: List<com.trixsearch.hasikit.telegram.config.TelegramSource>,
+    userSources: List<com.trixsearch.hasikit.telegram.config.TelegramSource>,
+    onAddSource: (identifier: String, displayName: String) -> Unit,
+    onRemoveSource: (identifier: String) -> Unit
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newIdentifier by remember { mutableStateOf("") }
+    var newDisplayName by remember { mutableStateOf("") }
 
-    SettingsGroup("Telegram Sources", Icons.Default.Subscriptions) {
-        if (editing) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                OutlinedTextField(
-                    value = editValue,
-                    onValueChange = { editValue = it },
-                    label = { Text("Channel username or link") },
-                    placeholder = { Text("@channel or https://t.me/channel") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { editing = false; editValue = sourceChannel }) { Text("Cancel") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = { onSave(editValue.trim()); editing = false }) { Text("Save") }
+    SettingsGroup("Content Sources", Icons.Default.Subscriptions) {
+        // Official sources
+        officialSources.forEach { source ->
+            ListItem(
+                headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
+                supportingContent = { Text(source.identifier, style = MaterialTheme.typography.bodySmall) },
+                leadingContent = { Icon(Icons.Default.Verified, null, tint = MaterialTheme.colorScheme.primary) },
+                trailingContent = {
+                    Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text("Official", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
-            }
-        } else {
-            SettingsClickRow(
-                icon = Icons.Default.Subscriptions,
-                title = "Source Channel",
-                subtitle = sourceChannel.ifBlank { "Not configured" },
-                onClick = { editing = true }
             )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         }
+        // User sources
+        userSources.forEach { source ->
+            ListItem(
+                headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
+                supportingContent = { Text(source.identifier, style = MaterialTheme.typography.bodySmall) },
+                leadingContent = { Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                trailingContent = {
+                    IconButton(onClick = { onRemoveSource(source.identifier) }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        // Add source button
+        SettingsClickRow(
+            icon = Icons.Default.Add,
+            title = "Add My Source",
+            subtitle = "Add a public channel, private channel, or group",
+            onClick = { showAddDialog = true }
+        )
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; newIdentifier = ""; newDisplayName = "" },
+            icon = { Icon(Icons.Default.Add, null) },
+            title = { Text("Add Source") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = newIdentifier,
+                        onValueChange = { newIdentifier = it },
+                        label = { Text("Channel / Group") },
+                        placeholder = { Text("@channel, -1001234567890, or t.me/+link") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    OutlinedTextField(
+                        value = newDisplayName,
+                        onValueChange = { newDisplayName = it },
+                        label = { Text("Display Name") },
+                        placeholder = { Text("My Channel") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newIdentifier.isNotBlank() && newDisplayName.isNotBlank()) {
+                            onAddSource(newIdentifier, newDisplayName)
+                            showAddDialog = false
+                            newIdentifier = ""
+                            newDisplayName = ""
+                        }
+                    },
+                    enabled = newIdentifier.isNotBlank() && newDisplayName.isNotBlank()
+                ) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false; newIdentifier = ""; newDisplayName = "" }) { Text("Cancel") } }
+        )
     }
 }
 

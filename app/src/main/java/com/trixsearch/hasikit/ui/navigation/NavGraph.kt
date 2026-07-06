@@ -1,7 +1,6 @@
 package com.trixsearch.hasikit.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,14 +36,10 @@ fun NavGraph(
         else -> Screen.Auth.route
     }
 
-    // Session is already restored in MainActivity.lifecycleScope before setContent.
-    // Do NOT call restoreSession() here — that would race with the MainActivity call.
-
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        // ── Auth graph ────────────────────────────────────────────────────────
         composable(Screen.Auth.route) {
             AuthScreen(
                 onAuthenticated = {
@@ -56,7 +51,6 @@ fun NavGraph(
             )
         }
 
-        // ── Main graph ────────────────────────────────────────────────────────
         composable(Screen.Home.route) {
             HomeScreen(navController, homeViewModel)
         }
@@ -73,16 +67,32 @@ fun NavGraph(
             route = Screen.Player.route,
             arguments = listOf(navArgument("videoId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val videoId = backStackEntry.arguments?.getString("videoId") ?: ""
-            val video = videos.find { it.id == videoId }
-            video?.let {
+            val rawId = backStackEntry.arguments?.getString("videoId") ?: ""
+            val videoId = Screen.Player.decodeId(rawId)
+
+            // External player: launched via ACTION_VIEW from another app
+            if (videoId.startsWith("external_")) {
                 PlayerScreen(
                     videoId = videoId,
-                    title = it.title,
+                    title = "Video",
                     player = player,
-                    videoUrl = it.videoUrl,
-                    localPath = it.localPath,
-                    telegramFileId = it.telegramFileId,
+                    videoUrl = "",
+                    localPath = null,
+                    telegramFileId = "",
+                    onBack = { navController.popBackStack() }
+                )
+                return@composable
+            }
+
+            val video = videos.find { it.id == videoId }
+            if (video != null) {
+                PlayerScreen(
+                    videoId = videoId,
+                    title = video.title,
+                    player = player,
+                    videoUrl = video.videoUrl,
+                    localPath = video.localPath,
+                    telegramFileId = video.telegramFileId,
                     onBack = { navController.popBackStack() }
                 )
             }

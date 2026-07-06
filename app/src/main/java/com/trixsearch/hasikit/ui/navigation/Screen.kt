@@ -1,5 +1,8 @@
 package com.trixsearch.hasikit.ui.navigation
 
+import java.net.URLDecoder
+import java.net.URLEncoder
+
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Search : Screen("search")
@@ -7,6 +10,10 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
     object Auth : Screen("auth")
     object Player : Screen("player/{videoId}") {
-        fun createRoute(videoId: String) = "player/$videoId"
+        fun createRoute(videoId: String): String {
+            val encoded = URLEncoder.encode(videoId, "UTF-8")
+            return "player/$encoded"
+        }
+        fun decodeId(raw: String): String = URLDecoder.decode(raw, "UTF-8")
     }
 }

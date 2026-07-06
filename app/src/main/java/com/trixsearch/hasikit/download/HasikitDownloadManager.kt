@@ -143,9 +143,11 @@ class HasikitDownloadManager @Inject constructor(
         val src = File(sourcePath)
         if (!src.exists()) return sourcePath
         val ext = sourcePath.substringAfterLast('.', "mp4")
+        // videoId may be "channelId_messageId" — sanitise for filename
+        val safeId = videoId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(30)
         val safeTitle = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(60)
         val destDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
-        val dest = File(destDir, "${safeTitle}_${videoId}.$ext")
+        val dest = File(destDir, "${safeTitle}_${safeId}.$ext")
         return try {
             src.copyTo(dest, overwrite = true)
             Log.d(TAG, "Copied to Movies: ${dest.absolutePath}")

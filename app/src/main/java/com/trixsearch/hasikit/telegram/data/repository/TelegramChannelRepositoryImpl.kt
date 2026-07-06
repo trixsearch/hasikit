@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.telegram.data.repository
 
 import android.util.Log
+import com.trixsearch.hasikit.telegram.config.TelegramSource
 import com.trixsearch.hasikit.telegram.domain.model.TelegramMedia
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
 import com.trixsearch.hasikit.telegram.service.TelegramClientService
@@ -23,7 +24,20 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     private val clientService: TelegramClientService
 ) : TelegramChannelRepository {
 
-    // ── Phase 1: Resolve channel ──────────────────────────────────────────────
+    // ── Source resolution ─────────────────────────────────────────────────────
+
+    override suspend fun resolveSource(source: TelegramSource): Result<Long> {
+        return when {
+            source.isChatId -> {
+                // Numeric chat ID — open the chat directly to verify access
+                val chatId = source.identifier.toLongOrNull()
+                    ?: return Result.failure(Exception("Invalid chat ID: ${source.identifier}"))
+                openChatById(chatId)
+            }
+            source.isInviteLink -> joinOrGetByInviteLink(source.identifier)
+            else -> resolveChannel(source.username)
+        }
+    }
 
     override suspend fun resolveChannel(username: String): Result<Long> {
         Log.d(TAG, "resolveChannel username=$username")
@@ -31,19 +45,13 @@ class TelegramChannelRepositoryImpl @Inject constructor(
             clientService.send(TdApi.SearchPublicChat(username)) { result ->
                 when (result) {
                     is TdApi.Chat -> {
-                        val type = result.type
-                        val typeLabel = when (type) {
+                        val typeLabel = when (val type = result.type) {
                             is TdApi.ChatTypeSupergroup -> if (type.isChannel) "Channel" else "Supergroup"
                             is TdApi.ChatTypeBasicGroup -> "BasicGroup"
-                            is TdApi.ChatTypePrivate    -> "Private"
-                            else                        -> "Unknown"
+                            is TdApi.ChatTypePrivate -> "Private"
+                            else -> "Unknown"
                         }
-                        Log.i(TAG, "CHANNEL_RESOLVED — " +
-                            "id=${result.id} " +
-                            "title=${result.title} " +
-                            "type=$typeLabel " +
-                            "memberCount=${(type as? TdApi.ChatTypeSupergroup)?.let { "" } ?: ""}"
-                        )
+                        Log.i(TAG, "CHANNEL_RESOLVED id=${result.id} title=${result.title} type=$typeLabel")
                         cont.resume(Result.success(result.id))
                     }
                     is TdApi.Error -> {
@@ -57,7 +65,65 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         }
     }
 
-    // ── Phase 3 + 5: Load media with pagination ───────────────────────────────
+    private suspend fun openChatById(chatId: Long): Result<Long> {
+        Log.d(TAG, "openChatById chatId=$chatId")
+        return suspendCancellableCoroutine { cont ->
+            clientService.send(TdApi.GetChat(chatId)) { result ->
+                when (result) {
+                    is TdApi.Chat -> {
+                        Log.i(TAG, "openChatById resolved id=${result.id} title=${result.title}")
+                        cont.resume(Result.success(result.id))
+                    }
+                    is TdApi.Error -> {
+                        Log.e(TAG, "openChatById error ${result.code}: ${result.message}")
+                        cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                    }
+                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
+                }
+            }
+            cont.invokeOnCancellation {}
+        }
+    }
+
+    private suspend fun joinOrGetByInviteLink(inviteLink: String): Result<Long> {
+        Log.d(TAG, "joinOrGetByInviteLink link=$inviteLink")
+        return suspendCancellableCoroutine { cont ->
+            clientService.send(TdApi.CheckChatInviteLink(inviteLink)) { result ->
+                when (result) {
+                    is TdApi.ChatInviteLinkInfo -> {
+                        val chatId = result.chatId
+                        if (chatId != 0L) {
+                            Log.i(TAG, "inviteLink resolved chatId=$chatId title=${result.title}")
+                            cont.resume(Result.success(chatId))
+                        } else {
+                            // Need to join first
+                            clientService.send(TdApi.JoinChatByInviteLink(inviteLink)) { joinResult ->
+                                when (joinResult) {
+                                    is TdApi.Chat -> {
+                                        Log.i(TAG, "joined via inviteLink chatId=${joinResult.id}")
+                                        cont.resume(Result.success(joinResult.id))
+                                    }
+                                    is TdApi.Error -> {
+                                        Log.e(TAG, "joinChatByInviteLink error ${joinResult.code}: ${joinResult.message}")
+                                        cont.resume(Result.failure(Exception("${joinResult.code}: ${joinResult.message}")))
+                                    }
+                                    else -> cont.resume(Result.failure(Exception("Unexpected join result: $joinResult")))
+                                }
+                            }
+                        }
+                    }
+                    is TdApi.Error -> {
+                        Log.e(TAG, "checkInviteLink error ${result.code}: ${result.message}")
+                        cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                    }
+                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
+                }
+            }
+            cont.invokeOnCancellation {}
+        }
+    }
+
+    // ── Media loading ─────────────────────────────────────────────────────────
 
     override suspend fun getChannelMedia(
         chatId: Long,
@@ -71,60 +137,45 @@ class TelegramChannelRepositoryImpl @Inject constructor(
             ) { result ->
                 when (result) {
                     is TdApi.Messages -> {
-                        val media = result.messages
-                            .mapNotNull { it.toTelegramMedia(chatId) }
-                        Log.d(TAG, "getChannelMedia — total=${result.totalCount} loaded=${result.messages.size} media=${media.size}")
-                        // Phase 1: log first 10 message IDs on initial load
-                        if (offsetMessageId == 0L) {
-                            result.messages.take(10).forEach { msg ->
-                                Log.i(TAG, "MSG_ID=${msg.id} date=${msg.date} type=${msg.content::class.java.simpleName}")
-                            }
-                        }
+                        val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
+                        Log.d(TAG, "getChannelMedia total=${result.totalCount} loaded=${result.messages.size} media=${media.size}")
                         cont.resume(Result.success(media))
                     }
                     is TdApi.Error -> {
                         Log.e(TAG, "getChannelMedia error ${result.code}: ${result.message}")
                         cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
                     }
-                    else -> cont.resume(Result.failure(Exception("Unexpected result: $result")))
+                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                 }
             }
             cont.invokeOnCancellation {}
         }
     }
 
-    // ── Phase 6: Search ───────────────────────────────────────────────────────
-
     override suspend fun searchChannelMedia(
         chatId: Long,
         query: String,
         limit: Int
     ): Result<List<TelegramMedia>> {
-        Log.d(TAG, "searchChannelMedia chatId=$chatId query=$query limit=$limit")
+        Log.d(TAG, "searchChannelMedia chatId=$chatId query=$query")
         return suspendCancellableCoroutine { cont ->
             clientService.send(
                 TdApi.SearchChatMessages(
-                    chatId,
-                    null,   // topicId — null = all topics
-                    query,
-                    null,   // senderId — null = all senders
-                    0,      // fromMessageId
-                    0,      // offset
-                    limit,
+                    chatId, null, query, null, 0, 0, limit,
                     TdApi.SearchMessagesFilterVideo()
                 )
             ) { result ->
                 when (result) {
                     is TdApi.FoundChatMessages -> {
                         val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
-                        Log.d(TAG, "searchChannelMedia — found=${result.totalCount} media=${media.size}")
+                        Log.d(TAG, "searchChannelMedia found=${result.totalCount} media=${media.size}")
                         cont.resume(Result.success(media))
                     }
                     is TdApi.Error -> {
                         Log.e(TAG, "searchChannelMedia error ${result.code}: ${result.message}")
                         cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
                     }
-                    else -> cont.resume(Result.failure(Exception("Unexpected result: $result")))
+                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                 }
             }
             cont.invokeOnCancellation {}
@@ -136,7 +187,6 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     override suspend fun resolveFileUrl(fileId: Long): Result<String> {
         Log.d(TAG, "resolveFileUrl fileId=$fileId")
         return suspendCancellableCoroutine { cont ->
-            // Priority 1: download just enough to start streaming (1 byte)
             clientService.send(
                 TdApi.DownloadFile(fileId.toInt(), 1, 0, 1, true)
             ) { result ->
@@ -144,17 +194,43 @@ class TelegramChannelRepositoryImpl @Inject constructor(
                     is TdApi.File -> {
                         val path = result.local.path
                         Log.d(TAG, "resolveFileUrl fileId=$fileId path=$path isDownloading=${result.local.isDownloadingActive}")
-                        if (path.isNotBlank()) {
-                            cont.resume(Result.success(path))
-                        } else {
-                            cont.resume(Result.failure(Exception("TDLib returned empty path for fileId=$fileId")))
-                        }
+                        if (path.isNotBlank()) cont.resume(Result.success(path))
+                        else cont.resume(Result.failure(Exception("TDLib returned empty path for fileId=$fileId")))
                     }
                     is TdApi.Error -> {
                         Log.e(TAG, "resolveFileUrl error ${result.code}: ${result.message}")
                         cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
                     }
-                    else -> cont.resume(Result.failure(Exception("Unexpected result: $result")))
+                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
+                }
+            }
+            cont.invokeOnCancellation {}
+        }
+    }
+
+    // ── Thumbnail download ────────────────────────────────────────────────────
+
+    override suspend fun downloadThumbnail(thumbnailFileId: Long): String? {
+        Log.d(TAG, "downloadThumbnail fileId=$thumbnailFileId")
+        return suspendCancellableCoroutine { cont ->
+            // Check if already downloaded
+            clientService.send(TdApi.GetFile(thumbnailFileId.toInt())) { fileResult ->
+                if (fileResult is TdApi.File && fileResult.local.isDownloadingCompleted && fileResult.local.path.isNotBlank()) {
+                    cont.resume(fileResult.local.path)
+                    return@send
+                }
+                // Download with low priority (32 = lowest)
+                clientService.send(
+                    TdApi.DownloadFile(thumbnailFileId.toInt(), 32, 0, 0, true)
+                ) { result ->
+                    when (result) {
+                        is TdApi.File -> {
+                            val path = result.local.path.takeIf { it.isNotBlank() }
+                            Log.d(TAG, "downloadThumbnail fileId=$thumbnailFileId path=$path")
+                            cont.resume(path)
+                        }
+                        else -> cont.resume(null)
+                    }
                 }
             }
             cont.invokeOnCancellation {}
@@ -162,7 +238,7 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     }
 }
 
-// ── Message → TelegramMedia extraction (Phase 3) ─────────────────────────────
+// ── Message → TelegramMedia extraction ───────────────────────────────────────
 
 private fun TdApi.Message.toTelegramMedia(chatId: Long): TelegramMedia? {
     return when (val content = this.content) {
@@ -170,34 +246,34 @@ private fun TdApi.Message.toTelegramMedia(chatId: Long): TelegramMedia? {
             val video = content.video
             if (!isSupportedMime(video.mimeType) && !isSupportedExt(video.fileName)) return null
             TelegramMedia(
-                messageId      = id,
-                fileId         = video.video.id.toLong(),
-                channelId      = chatId,
-                fileName       = video.fileName,
-                title          = cleanTitle(video.fileName),
-                caption        = content.caption.text,
-                duration       = video.duration,
-                size           = video.video.size,
+                messageId = id,
+                fileId = video.video.id.toLong(),
+                channelId = chatId,
+                fileName = video.fileName,
+                title = cleanTitle(video.fileName),
+                caption = content.caption.text,
+                duration = video.duration,
+                size = video.video.size,
                 thumbnailFileId = video.thumbnail?.file?.id?.toLong(),
-                mimeType       = video.mimeType,
-                uploadDate     = date
+                mimeType = video.mimeType,
+                uploadDate = date
             )
         }
         is TdApi.MessageDocument -> {
             val doc = content.document
             if (!isSupportedMime(doc.mimeType) && !isSupportedExt(doc.fileName)) return null
             TelegramMedia(
-                messageId      = id,
-                fileId         = doc.document.id.toLong(),
-                channelId      = chatId,
-                fileName       = doc.fileName,
-                title          = cleanTitle(doc.fileName),
-                caption        = content.caption.text,
-                duration       = 0,
-                size           = doc.document.size,
+                messageId = id,
+                fileId = doc.document.id.toLong(),
+                channelId = chatId,
+                fileName = doc.fileName,
+                title = cleanTitle(doc.fileName),
+                caption = content.caption.text,
+                duration = 0,
+                size = doc.document.size,
                 thumbnailFileId = doc.thumbnail?.file?.id?.toLong(),
-                mimeType       = doc.mimeType,
-                uploadDate     = date
+                mimeType = doc.mimeType,
+                uploadDate = date
             )
         }
         else -> null
@@ -205,7 +281,6 @@ private fun TdApi.Message.toTelegramMedia(chatId: Long): TelegramMedia? {
 }
 
 private fun isSupportedMime(mime: String): Boolean = mime in SUPPORTED_MIME
-
 private fun isSupportedExt(fileName: String): Boolean =
     fileName.substringAfterLast('.', "").lowercase() in SUPPORTED_EXT
 

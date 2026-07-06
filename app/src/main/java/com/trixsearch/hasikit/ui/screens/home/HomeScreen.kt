@@ -56,6 +56,7 @@ fun HomeScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val error by viewModel.error.collectAsState()
+    val noAccessMessage by viewModel.noAccessMessage.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     listState.OnNearBottom { viewModel.loadMore() }
@@ -130,6 +131,20 @@ fun HomeScreen(
                                 CircularProgressIndicator()
                                 Spacer(Modifier.height(12.dp))
                                 Text("Loading @testhasikit…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    return@LazyColumn
+                }
+
+                // No access state
+                if (noAccessMessage != null && videos.isEmpty() && !isLoading) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                                Spacer(Modifier.height(12.dp))
+                                Text(noAccessMessage!!, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                             }
                         }
                     }
@@ -218,7 +233,7 @@ fun HomeScreen(
 
                 // All Videos
                 item { SectionHeader("All Videos") }
-                items(videos, key = { it.id }) { video ->
+                items(videos, key = { "all_${it.id}" }) { video ->
                     HorizontalVideoCard(
                         video = video,
                         onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
@@ -336,8 +351,17 @@ fun HorizontalVideoCard(video: Video, onClick: () -> Unit, onDownloadClick: () -
 
 @Composable
 fun VideoThumbnail(url: String?, modifier: Modifier = Modifier) {
+    // TDLib returns raw file paths — prefix with file:// for Coil
+    val model = remember(url) {
+        when {
+            url == null -> null
+            url.startsWith("file://") || url.startsWith("content://") || url.startsWith("http") -> url
+            url.startsWith("/") -> "file://$url"
+            else -> url
+        }
+    }
     SubcomposeAsyncImage(
-        model = url,
+        model = model,
         contentDescription = null,
         modifier = modifier.clip(RoundedCornerShape(0.dp)),
         contentScale = ContentScale.Crop,
