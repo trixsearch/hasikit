@@ -17,36 +17,63 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import com.trixsearch.hasikit.domain.model.Video
-import com.trixsearch.hasikit.domain.repository.VideoRepository
+import com.trixsearch.hasikit.telegram.domain.model.TelegramMedia
+import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
 import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.screens.home.HorizontalVideoCard
-import com.trixsearch.hasikit.util.SampleData
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 
+private const val SOURCE_CHANNEL = "testhasikit"
+
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val repository: VideoRepository
+    private val channelRepository: TelegramChannelRepository
 ) : ViewModel() {
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
-    @OptIn(FlowPreview::class)
+    private val _chatId = MutableStateFlow<Long?>(null)
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val results: StateFlow<List<Video>> = _query
         .debounce(300)
         .flatMapLatest { q ->
-            if (q.isBlank()) flowOf(emptyList())
-            else repository.searchVideos(q).map { dbResults ->
-                val sampleResults = SampleData.videos.filter { it.title.contains(q, ignoreCase = true) }
-                (dbResults + sampleResults).distinctBy { it.id }
+            if (q.isBlank()) return@flatMapLatest flowOf(emptyList())
+            flow {
+                val chatId = getOrResolveChatId() ?: run {
+                    emit(emptyList()); return@flow
+                }
+                channelRepository.searchChannelMedia(chatId, q)
+                    .onSuccess { emit(it.map { m -> m.toVideo() }) }
+                    .onFailure { emit(emptyList()) }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setQuery(q: String) { _query.value = q }
+
+    private suspend fun getOrResolveChatId(): Long? {
+        _chatId.value?.let { return it }
+        return channelRepository.resolveChannel(SOURCE_CHANNEL)
+            .getOrNull()
+            ?.also { _chatId.value = it }
+    }
 }
+
+private fun TelegramMedia.toVideo() = Video(
+    id             = messageId.toString(),
+    title          = title.ifBlank { fileName },
+    thumbnail      = null,
+    videoUrl       = "",
+    telegramFileId = fileId.toString(),
+    duration       = duration.toLong() * 1000L,
+    size           = size
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,19 +85,15 @@ fun SearchScreen(
     val results by viewModel.results.collectAsState()
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Search") })
-        }
+        topBar = { TopAppBar(title = { Text("Search") }) }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
+            modifier = Modifier.padding(padding).fillMaxSize()
         ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { viewModel.setQuery(it) },
-                placeholder = { Text("Search videos…") },
+                placeholder = { Text("Search @testhasikit…") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -89,7 +112,7 @@ fun SearchScreen(
             when {
                 query.isBlank() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Type to search", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Type to search channel", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 results.isEmpty() -> {

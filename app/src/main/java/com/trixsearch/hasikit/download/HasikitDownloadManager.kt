@@ -1,14 +1,13 @@
 package com.trixsearch.hasikit.download
 
-import android.app.DownloadManager
 import android.content.Context
-import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import com.trixsearch.hasikit.domain.model.DownloadState
 import com.trixsearch.hasikit.domain.model.DownloadTask
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.repository.VideoRepository
+import com.trixsearch.hasikit.telegram.service.TelegramClientService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,46 +16,28 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.drinkless.tdlib.TdApi
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 private const val TAG = "HasikitDownload"
-private const val USER_AGENT = "Hasikit/1.0 (Android)"
-
-private val SUPPORTED_EXTENSIONS = setOf("mp4", "mov", "mkv", "webm", "m4v")
-
-private val MIME_TO_EXT = mapOf(
-    "video/mp4" to "mp4",
-    "video/quicktime" to "mov",
-    "video/x-matroska" to "mkv",
-    "video/webm" to "webm",
-    "video/x-m4v" to "m4v"
-)
-
-private val URL_EXT_REGEX = Regex("""\.([a-zA-Z0-9]{2,4})(?:[?#].*)?$""")
-
-private fun resolveExtension(url: String, mimeType: String?): String {
-    val fromUrl = URL_EXT_REGEX.find(url)?.groupValues?.get(1)?.lowercase()
-    if (fromUrl in SUPPORTED_EXTENSIONS) return fromUrl!!
-    return MIME_TO_EXT[mimeType] ?: "mp4"
-}
 
 @Singleton
 class HasikitDownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val repository: VideoRepository
+    private val repository: VideoRepository,
+    private val telegramClientService: TelegramClientService
 ) {
-    private val systemDownloadManager =
-        context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val _downloadTasks = MutableStateFlow<Map<String, DownloadTask>>(emptyMap())
     val downloadTasks: StateFlow<Map<String, DownloadTask>> = _downloadTasks
 
-    // Tracks which videoIds already have an active monitor coroutine
     private val activeMonitors = mutableSetOf<String>()
     private val monitorMutex = Mutex()
 
@@ -75,130 +56,74 @@ class HasikitDownloadManager @Inject constructor(
     }
 
     fun startDownload(video: Video) {
-        val ext = resolveExtension(video.videoUrl, null)
-        val fileName = "${video.id}.$ext"
-        Log.d(TAG, "Download START videoId=${video.id} title='${video.title}' url=${video.videoUrl} file=$fileName")
-
-        val request = DownloadManager.Request(Uri.parse(video.videoUrl))
-            .setTitle(video.title)
-            .setDescription("Downloading via Hasikit")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, fileName)
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
-            .addRequestHeader("User-Agent", USER_AGENT)
-            .addRequestHeader("Accept", "video/*, */*")
-
-        val downloadId = systemDownloadManager.enqueue(request)
-        Log.d(TAG, "Enqueued downloadId=$downloadId for videoId=${video.id}")
-
+        val telegramFileId = video.telegramFileId.toLongOrNull()
+        if (telegramFileId == null || telegramFileId == 0L) {
+            Log.e(TAG, "startDownload — no valid telegramFileId for videoId=${video.id}")
+            return
+        }
+        Log.d(TAG, "startDownload videoId=${video.id} fileId=$telegramFileId title='${video.title}'")
         scope.launch {
-            val task = DownloadTask(
-                videoId = video.id,
-                state = DownloadState.DOWNLOADING,
-                progress = 0f,
-                downloadId = downloadId
-            )
-            repository.saveDownload(task)
+            repository.saveDownload(DownloadTask(videoId = video.id, state = DownloadState.DOWNLOADING, progress = 0f))
             repository.insertVideo(video)
             startMonitorIfNeeded(video.id)
+            telegramClientService.send(TdApi.DownloadFile(telegramFileId.toInt(), 1, 0, 0, false)) { result ->
+                when (result) {
+                    is TdApi.File  -> Log.d(TAG, "DownloadFile started fileId=$telegramFileId path=${result.local.path}")
+                    is TdApi.Error -> Log.e(TAG, "DownloadFile error ${result.code}: ${result.message}")
+                }
+            }
         }
     }
 
     private suspend fun startMonitorIfNeeded(videoId: String) {
         monitorMutex.withLock {
-            if (videoId in activeMonitors) {
-                Log.d(TAG, "Monitor already active for videoId=$videoId, skipping")
-                return
-            }
+            if (videoId in activeMonitors) return
             activeMonitors.add(videoId)
         }
-        Log.d(TAG, "Starting monitor for videoId=$videoId")
         scope.launch { monitorDownload(videoId) }
     }
 
     private suspend fun monitorDownload(videoId: String) {
         try {
-            var lastLoggedProgress = -1
-            while (true) {
+            var running = true
+            while (running) {
                 val task = repository.getDownload(videoId)
-                if (task == null || task.downloadId == null) {
-                    Log.d(TAG, "Monitor stopping — no task/downloadId for videoId=$videoId")
-                    break
+                if (task == null || task.state == DownloadState.COMPLETED || task.state == DownloadState.FAILED) {
+                    running = false
+                    continue
                 }
-
-                val cursor = systemDownloadManager.query(
-                    DownloadManager.Query().setFilterById(task.downloadId)
-                )
-
-                if (!cursor.moveToFirst()) {
-                    cursor.close()
-                    Log.w(TAG, "Monitor: cursor empty for videoId=$videoId downloadId=${task.downloadId}")
+                val video = repository.getVideoById(videoId)
+                val fileId = video?.telegramFileId?.toLongOrNull()
+                if (video == null || fileId == null) {
+                    running = false
+                    continue
+                }
+                val file = getFileInfo(fileId.toInt())
+                if (file == null) {
                     delay(2000)
                     continue
                 }
+                val local = file.local
+                val remote = file.remote
+                val progress = if (file.size > 0) local.downloadedSize.toFloat() / file.size else 0f
 
-                val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                val bytesDownloaded =
-                    cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                val bytesTotal =
-                    cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                val progress = if (bytesTotal > 0) bytesDownloaded.toFloat() / bytesTotal else 0f
-                val progressPct = (progress * 100).toInt()
-
-                when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> {
-                        val localUri =
-                            cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
-                        val localPath = Uri.parse(localUri).path
-                        cursor.close()
-                        Log.d(TAG, "Download COMPLETE videoId=$videoId path=$localPath size=$bytesDownloaded bytes")
-
-                        repository.saveDownload(
-                            task.copy(state = DownloadState.COMPLETED, progress = 1f, localPath = localPath)
-                        )
-                        repository.getVideoById(videoId)?.let {
-                            repository.updateVideo(it.copy(isDownloaded = true, localPath = localPath))
-                        }
-                        break
+                if (local.isDownloadingCompleted) {
+                    val destPath = copyToMoviesDir(local.path, video.title, video.id)
+                    Log.d(TAG, "Download COMPLETE videoId=$videoId path=$destPath")
+                    repository.saveDownload(task.copy(state = DownloadState.COMPLETED, progress = 1f, localPath = destPath))
+                    repository.updateVideo(video.copy(isDownloaded = true, localPath = destPath, downloadProgress = 1f))
+                    running = false
+                } else if (!local.isDownloadingActive && !remote.isUploadingActive) {
+                    Log.w(TAG, "Download stalled videoId=$videoId — marking FAILED")
+                    repository.saveDownload(task.copy(state = DownloadState.FAILED))
+                    running = false
+                } else {
+                    if (progress != task.progress) {
+                        repository.saveDownload(task.copy(progress = progress))
+                        Log.d(TAG, "Download PROGRESS videoId=$videoId ${(progress * 100).toInt()}% (${local.downloadedSize}/${file.size})")
                     }
-
-                    DownloadManager.STATUS_FAILED -> {
-                        val reason =
-                            cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                        cursor.close()
-                        Log.e(TAG, "Download FAILED videoId=$videoId reason=$reason (${describeFailReason(reason)})")
-                        repository.saveDownload(task.copy(state = DownloadState.FAILED, errorCode = reason))
-                        break
-                    }
-
-                    DownloadManager.STATUS_PAUSED -> {
-                        val reason =
-                            cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                        cursor.close()
-                        Log.d(TAG, "Download PAUSED videoId=$videoId reason=$reason progress=$progressPct%")
-                        if (progress != task.progress) {
-                            repository.saveDownload(task.copy(progress = progress, state = DownloadState.PAUSED))
-                        }
-                    }
-
-                    DownloadManager.STATUS_PENDING -> {
-                        cursor.close()
-                        Log.d(TAG, "Download PENDING videoId=$videoId")
-                    }
-
-                    else -> {
-                        cursor.close()
-                        if (progressPct != lastLoggedProgress) {
-                            Log.d(TAG, "Download PROGRESS videoId=$videoId $progressPct% ($bytesDownloaded/$bytesTotal bytes)")
-                            lastLoggedProgress = progressPct
-                        }
-                        if (progress != task.progress) {
-                            repository.saveDownload(task.copy(progress = progress))
-                        }
-                    }
+                    delay(1000)
                 }
-                delay(1000)
             }
         } finally {
             monitorMutex.withLock { activeMonitors.remove(videoId) }
@@ -206,51 +131,48 @@ class HasikitDownloadManager @Inject constructor(
         }
     }
 
-    fun retryDownload(video: Video) {
-        scope.launch {
-            val existing = repository.getDownload(video.id)
-            if (existing != null) {
-                existing.downloadId?.let { systemDownloadManager.remove(it) }
-                repository.deleteDownload(video.id)
+    private suspend fun getFileInfo(fileId: Int): TdApi.File? =
+        suspendCancellableCoroutine { cont ->
+            telegramClientService.send(TdApi.GetFile(fileId)) { result ->
+                cont.resume(if (result is TdApi.File) result else null)
             }
-            Log.d(TAG, "Retrying download for videoId=${video.id}")
+            cont.invokeOnCancellation {}
         }
+
+    private fun copyToMoviesDir(sourcePath: String, title: String, videoId: String): String {
+        val src = File(sourcePath)
+        if (!src.exists()) return sourcePath
+        val ext = sourcePath.substringAfterLast('.', "mp4")
+        val safeTitle = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(60)
+        val destDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+        val dest = File(destDir, "${safeTitle}_${videoId}.$ext")
+        return try {
+            src.copyTo(dest, overwrite = true)
+            Log.d(TAG, "Copied to Movies: ${dest.absolutePath}")
+            dest.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Copy failed, using TDLib path: $sourcePath", e)
+            sourcePath
+        }
+    }
+
+    fun retryDownload(video: Video) {
+        scope.launch { repository.deleteDownload(video.id) }
         startDownload(video)
     }
 
     fun deleteDownload(videoId: String) {
         scope.launch {
             val task = repository.getDownload(videoId)
-            task?.downloadId?.let {
-                systemDownloadManager.remove(it)
-                Log.d(TAG, "Cancelled downloadId=$it for videoId=$videoId")
+            val video = repository.getVideoById(videoId)
+            video?.telegramFileId?.toLongOrNull()?.let { fileId ->
+                telegramClientService.send(TdApi.CancelDownloadFile(fileId.toInt(), false)) {}
             }
+            task?.localPath?.let { path -> File(path).delete() }
+            video?.localPath?.let { path -> if (path != task?.localPath) File(path).delete() }
             repository.deleteDownload(videoId)
-            repository.getVideoById(videoId)?.let { video ->
-                video.localPath?.let { path ->
-                    val deleted = File(path).delete()
-                    Log.d(TAG, "Deleted local file=$path success=$deleted")
-                }
-                repository.updateVideo(video.copy(isDownloaded = false, localPath = null, downloadProgress = 0f))
-            }
+            video?.let { repository.updateVideo(it.copy(isDownloaded = false, localPath = null, downloadProgress = 0f)) }
             Log.d(TAG, "Download record removed videoId=$videoId")
         }
-    }
-
-    private fun describeFailReason(reason: Int): String = when (reason) {
-        DownloadManager.ERROR_CANNOT_RESUME -> "CANNOT_RESUME"
-        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "DEVICE_NOT_FOUND"
-        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "FILE_ALREADY_EXISTS"
-        DownloadManager.ERROR_FILE_ERROR -> "FILE_ERROR"
-        DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP_DATA_ERROR"
-        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "INSUFFICIENT_SPACE"
-        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "TOO_MANY_REDIRECTS"
-        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "UNHANDLED_HTTP_CODE"
-        DownloadManager.ERROR_UNKNOWN -> "UNKNOWN"
-        400 -> "HTTP_400_BAD_REQUEST"
-        401 -> "HTTP_401_UNAUTHORIZED"
-        403 -> "HTTP_403_FORBIDDEN"
-        404 -> "HTTP_404_NOT_FOUND"
-        else -> "reason=$reason"
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -172,6 +173,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun forceDeleteSession() {
+        viewModelScope.launch {
+            Log.d(TAG, "forceDeleteSession")
+            telegramAuthRepository.forceDeleteSession()
+        }
+    }
+
     // Telegram source channel
     private val _sourceChannel = MutableStateFlow(telegramSourceConfig.sourceChannel)
     val sourceChannel: StateFlow<String> = _sourceChannel
@@ -204,7 +212,7 @@ private data class SettingsSection(
 )
 
 private val ALL_SECTIONS = listOf(
-    SettingsSection("account", "Account", Icons.Default.AccountCircle, listOf("account", "telegram", "login", "logout", "profile", "phone", "user")),
+    SettingsSection("account", "Account", Icons.Default.AccountCircle, listOf("account", "telegram", "login", "logout", "profile", "phone", "user", "force", "clear", "session")),
     SettingsSection("sources", "Telegram Sources", Icons.Default.Subscriptions, listOf("source", "channel", "telegram", "media", "content")),
     SettingsSection("appearance", "Appearance", Icons.Default.Palette, listOf("appearance", "theme", "dark", "light", "color")),
     SettingsSection("player", "Player", Icons.Default.PlayCircle, listOf("player", "playback", "auto", "quality", "speed", "stream")),
@@ -235,6 +243,7 @@ fun SettingsScreen(
     var showClearAllDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showForceDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshStorageStats() }
 
@@ -302,7 +311,7 @@ fun SettingsScreen(
             ) {
                 items(visibleSections, key = { it.id }) { section ->
                     when (section.id) {
-                        "account" -> AccountSection(currentUser, onLogout = { showLogoutDialog = true })
+                        "account" -> AccountSection(currentUser, onLogout = { showLogoutDialog = true }, onForceDelete = { showForceDeleteDialog = true })
                         "sources" -> TelegramSourcesSection(sourceChannel, onSave = viewModel::setSourceChannel)
                         "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
                         "player" -> PlayerSection(autoPlay, streamingQuality, viewModel::setAutoPlay, onQualityClick = { showQualityDialog = true })
@@ -404,7 +413,7 @@ fun SettingsScreen(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            icon = { Icon(Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.error) },
+            icon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Sign Out") },
             text = { Text("Sign out of your Telegram account? You will need to log in again to access content.") },
             confirmButton = {
@@ -420,6 +429,29 @@ fun SettingsScreen(
                 ) { Text("Sign Out") }
             },
             dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Force delete session dialog
+    if (showForceDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showForceDeleteDialog = false },
+            icon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Force Clear Session", color = MaterialTheme.colorScheme.error) },
+            text = { Text("This will delete the TDLib database, all cached Telegram files, and your saved session.\n\nUse this if you are stuck in a login loop.\n\nYou will need to log in again.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.forceDeleteSession()
+                        showForceDeleteDialog = false
+                        navController.navigate(com.trixsearch.hasikit.ui.navigation.Screen.Auth.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Force Clear") }
+            },
+            dismissButton = { TextButton(onClick = { showForceDeleteDialog = false }) { Text("Cancel") } }
         )
     }
 }
@@ -464,7 +496,8 @@ private fun TelegramSourcesSection(sourceChannel: String, onSave: (String) -> Un
 @Composable
 private fun AccountSection(
     user: com.trixsearch.hasikit.telegram.domain.model.TelegramUser?,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onForceDelete: () -> Unit
 ) {
     SettingsGroup("Account", Icons.Default.AccountCircle) {
         if (user != null) {
@@ -496,10 +529,18 @@ private fun AccountSection(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         }
         SettingsClickRow(
-            icon = Icons.Default.Logout,
+            icon = Icons.AutoMirrored.Filled.ExitToApp,
             title = if (user != null) "Sign Out" else "Sign In",
             subtitle = if (user != null) "Sign out of Telegram" else "Sign in with Telegram",
             onClick = onLogout,
+            tintColor = MaterialTheme.colorScheme.error
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsClickRow(
+            icon = Icons.Default.DeleteForever,
+            title = "Force Clear Local Telegram Session",
+            subtitle = "Delete TDLib database and restart auth flow",
+            onClick = onForceDelete,
             tintColor = MaterialTheme.colorScheme.error
         )
     }

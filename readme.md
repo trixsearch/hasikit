@@ -587,7 +587,7 @@ Website:
 
 Project:
 
-<https://trixsearch.github.io/hasikit>
+<https://trixsearch.github.io/>
 
 > The web version is currently under development, but it represents the long-term vision of making Hasikit available beyond Android and creating a complete cross-platform media ecosystem.
 

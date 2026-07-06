@@ -1,5 +1,6 @@
 package com.trixsearch.hasikit.telegram.data.repository
 
+import android.content.Context
 import android.util.Log
 import com.trixsearch.hasikit.telegram.data.session.TelegramSessionManager
 import com.trixsearch.hasikit.telegram.domain.model.AuthResult
@@ -7,9 +8,10 @@ import com.trixsearch.hasikit.telegram.domain.model.AuthState
 import com.trixsearch.hasikit.telegram.domain.model.TelegramUser
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
 import com.trixsearch.hasikit.telegram.service.TelegramClientService
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,6 +19,7 @@ private const val TAG = "TelegramAuthRepo"
 
 @Singleton
 class TelegramAuthRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val clientService: TelegramClientService,
     private val sessionManager: TelegramSessionManager
 ) : TelegramAuthRepository {
@@ -31,12 +34,10 @@ class TelegramAuthRepositoryImpl @Inject constructor(
             when (result) {
                 is AuthResult.CodeSent -> {
                     _authState.value = AuthState.CodeSent(phoneNumber, result.phoneCodeHash)
-                    Log.d(TAG, "sendCode success — hash=${result.phoneCodeHash}")
                     result
                 }
                 is AuthResult.Failure -> {
                     _authState.value = AuthState.Error(result.message)
-                    Log.e(TAG, "sendCode failed: ${result.message}")
                     result
                 }
                 else -> AuthResult.Failure("Unexpected result from sendCode")
@@ -49,12 +50,8 @@ class TelegramAuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun verifyCode(
-        phoneNumber: String,
-        phoneCodeHash: String,
-        code: String
-    ): AuthResult {
-        Log.d(TAG, "verifyCode phone=$phoneNumber code=$code")
+    override suspend fun verifyCode(phoneNumber: String, phoneCodeHash: String, code: String): AuthResult {
+        Log.d(TAG, "verifyCode phone=$phoneNumber")
         return try {
             val result = clientService.verifyCode(phoneNumber, phoneCodeHash, code)
             when (result) {
@@ -62,12 +59,10 @@ class TelegramAuthRepositoryImpl @Inject constructor(
                     val sessionString = clientService.exportSession()
                     sessionManager.saveSession(result.user, sessionString)
                     _authState.value = AuthState.Authenticated(result.user)
-                    Log.d(TAG, "verifyCode success userId=${result.user.id}")
                     result
                 }
                 is AuthResult.Failure -> {
                     _authState.value = AuthState.Error(result.message)
-                    Log.e(TAG, "verifyCode failed: ${result.message}")
                     result
                 }
                 else -> AuthResult.Failure("Unexpected result from verifyCode")
@@ -80,37 +75,20 @@ class TelegramAuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getCurrentUser(): TelegramUser? {
-        return when (val state = _authState.value) {
-            is AuthState.Authenticated -> state.user
-            else -> null
-        }
-    }
+    override suspend fun getCurrentUser(): TelegramUser? =
+        (_authState.value as? AuthState.Authenticated)?.user
 
     override suspend fun restoreSession() {
         Log.d(TAG, "restoreSession")
         if (!sessionManager.hasValidSession()) {
-            Log.d(TAG, "restoreSession — no saved session")
             _authState.value = AuthState.Unauthenticated
             return
         }
         try {
             val sessionString = sessionManager.getSessionString()
             if (sessionString.isNullOrBlank()) {
-                Log.w(TAG, "restoreSession — session string missing")
+                sessionManager.clearSession()
                 _authState.value = AuthState.Unauthenticated
-                return
-            }
-            // Demo session — restore directly from saved user without TDLib
-            if (sessionString == "demo_session") {
-                val user = sessionManager.savedUser.first()
-                if (user != null) {
-                    _authState.value = AuthState.Authenticated(user)
-                    Log.d(TAG, "restoreSession demo userId=${user.id}")
-                } else {
-                    sessionManager.clearSession()
-                    _authState.value = AuthState.Unauthenticated
-                }
                 return
             }
             val user = clientService.importSession(sessionString)
@@ -131,19 +109,34 @@ class TelegramAuthRepositoryImpl @Inject constructor(
 
     override suspend fun logout() {
         Log.d(TAG, "logout")
+        // Clear app state immediately so UI navigates away without waiting for TDLib
+        sessionManager.clearSession()
+        _authState.value = AuthState.Unauthenticated
         try {
             clientService.logout()
         } catch (e: Exception) {
-            Log.e(TAG, "logout exception: ${e.message}", e)
-        } finally {
-            sessionManager.clearSession()
-            _authState.value = AuthState.Unauthenticated
+            Log.e(TAG, "logout TDLib exception (session already cleared): ${e.message}", e)
         }
     }
 
+    override suspend fun forceDeleteSession() {
+        Log.d(TAG, "forceDeleteSession")
+        sessionManager.clearSession()
+        _authState.value = AuthState.Unauthenticated
+        try {
+            // Delete TDLib database directory entirely
+            val tdlibDir = File(context.filesDir, "tdlib")
+            if (tdlibDir.exists()) {
+                tdlibDir.deleteRecursively()
+                Log.d(TAG, "forceDeleteSession — deleted TDLib dir: ${tdlibDir.absolutePath}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "forceDeleteSession exception: ${e.message}", e)
+        }
+    }
+
+    // Kept for interface compatibility — no-op since demo mode is removed
     override suspend fun loginAsDemo(user: TelegramUser) {
-        Log.d(TAG, "loginAsDemo userId=${user.id}")
-        sessionManager.saveSession(user, "demo_session")
-        _authState.value = AuthState.Authenticated(user)
+        Log.w(TAG, "loginAsDemo called but demo mode is disabled")
     }
 }

@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -10,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.trixsearch.hasikit.player.HasikitPlayer
+import com.trixsearch.hasikit.telegram.domain.model.AuthState
 import com.trixsearch.hasikit.ui.screens.auth.AuthScreen
 import com.trixsearch.hasikit.ui.screens.auth.AuthViewModel
 import com.trixsearch.hasikit.ui.screens.home.HomeScreen
@@ -25,17 +27,18 @@ fun NavGraph(
     player: HasikitPlayer
 ) {
     val authViewModel: AuthViewModel = hiltViewModel()
+    val authState by authViewModel.authState.collectAsState()
 
     val homeViewModel: HomeViewModel = hiltViewModel()
     val videos by homeViewModel.videos.collectAsState()
 
-    // AUTH BYPASS — temporary for demo/playback testing.
-    // Restore auth-gated startDestination after TDLib integration:
-    //   val startDestination = when (authState) {
-    //       is AuthState.Authenticated -> Screen.Home.route
-    //       else -> Screen.Auth.route
-    //   }
-    val startDestination = Screen.Home.route
+    val startDestination = when (authState) {
+        is AuthState.Authenticated -> Screen.Home.route
+        else -> Screen.Auth.route
+    }
+
+    // Session is already restored in MainActivity.lifecycleScope before setContent.
+    // Do NOT call restoreSession() here — that would race with the MainActivity call.
 
     NavHost(
         navController = navController,
@@ -79,6 +82,7 @@ fun NavGraph(
                     player = player,
                     videoUrl = it.videoUrl,
                     localPath = it.localPath,
+                    telegramFileId = it.telegramFileId,
                     onBack = { navController.popBackStack() }
                 )
             }

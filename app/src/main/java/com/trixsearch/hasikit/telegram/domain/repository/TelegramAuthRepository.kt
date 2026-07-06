@@ -19,6 +19,7 @@ interface TelegramAuthRepository {
 
     suspend fun logout()
 
-    /** Demo mode only — immediately authenticates with a local demo user. No network call. */
+    suspend fun forceDeleteSession()
+
     suspend fun loginAsDemo(user: TelegramUser)
 }
