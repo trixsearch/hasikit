@@ -29,6 +29,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 
@@ -54,15 +55,17 @@ class SearchViewModel @Inject constructor(
                     addAll(sourceConfig.officialSources)
                     addAll(sourceConfig.userSourcesFlow.first())
                 }
-                val allResults = allSources.map { source ->
-                    async {
-                        val chatId = resolveChatId(source) ?: return@async emptyList()
-                        channelRepository.searchChannelMedia(chatId, q)
-                            .getOrNull()
-                            ?.map { it.toVideo(source) }
-                            ?: emptyList()
-                    }
-                }.awaitAll().flatten()
+                val allResults = coroutineScope {
+                    allSources.map { source ->
+                        async {
+                            val chatId = resolveChatId(source) ?: return@async emptyList<Video>()
+                            channelRepository.searchChannelMedia(chatId, q)
+                                .getOrNull()
+                                ?.map { it.toVideo(source) }
+                                ?: emptyList()
+                        }
+                    }.awaitAll().flatten()
+                }
                 emit(allResults)
             }
         }
