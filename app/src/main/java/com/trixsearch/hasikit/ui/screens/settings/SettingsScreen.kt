@@ -1,6 +1,8 @@
 package com.trixsearch.hasikit.ui.screens.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import androidx.compose.foundation.background
@@ -39,6 +41,7 @@ import com.trixsearch.hasikit.telegram.config.TelegramSource
 import com.trixsearch.hasikit.telegram.config.TelegramSourceConfig
 import com.trixsearch.hasikit.telegram.domain.model.TelegramUser
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
+import com.trixsearch.hasikit.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +54,6 @@ private val Context.settingsDataStore by preferencesDataStore(name = "hasikit_se
 private val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only_downloads")
 private val KEY_AUTO_PLAY = booleanPreferencesKey("auto_play")
 private val KEY_STREAMING_QUALITY = stringPreferencesKey("streaming_quality")
-private val KEY_SOURCE_CHANNEL = stringPreferencesKey("telegram_source_channel")
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -181,7 +183,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // Telegram source channel (legacy single-source)
+    // Telegram source channel
     val officialSources = telegramSourceConfig.officialSources
 
     val userSources: StateFlow<List<TelegramSource>> = telegramSourceConfig.userSourcesFlow
@@ -200,27 +202,6 @@ class SettingsViewModel @Inject constructor(
             telegramSourceConfig.removeUserSource(identifier)
         }
     }
-
-    // Legacy single source
-    private val _sourceChannel = MutableStateFlow(telegramSourceConfig.sourceChannel)
-    val sourceChannel: StateFlow<String> = _sourceChannel
-
-    fun setSourceChannel(value: String) {
-        viewModelScope.launch {
-            context.settingsDataStore.edit { it[KEY_SOURCE_CHANNEL] = value }
-            _sourceChannel.value = value
-            Log.d(TAG, "sourceChannel=$value")
-        }
-    }
-
-    init {
-        viewModelScope.launch {
-            context.settingsDataStore.data.collect { prefs ->
-                val saved = prefs[KEY_SOURCE_CHANNEL]
-                if (!saved.isNullOrBlank()) _sourceChannel.value = saved
-            }
-        }
-    }
 }
 
 // ─── Section model for search filtering ───────────────────────────────────────
@@ -236,9 +217,11 @@ private val ALL_SECTIONS = listOf(
     SettingsSection("account", "Account", Icons.Default.AccountCircle, listOf("account", "telegram", "login", "logout", "profile", "phone", "user", "force", "clear", "session")),
     SettingsSection("sources", "Telegram Sources", Icons.Default.Subscriptions, listOf("source", "channel", "telegram", "media", "content")),
     SettingsSection("appearance", "Appearance", Icons.Default.Palette, listOf("appearance", "theme", "dark", "light", "color")),
+    SettingsSection("language", "Language", Icons.Default.Language, listOf("language", "hindi", "english", "locale", "translation")),
     SettingsSection("player", "Player", Icons.Default.PlayCircle, listOf("player", "playback", "auto", "quality", "speed", "stream")),
     SettingsSection("downloads", "Downloads", Icons.Default.Download, listOf("download", "wifi", "network", "location", "folder")),
     SettingsSection("storage", "Storage", Icons.Default.Storage, listOf("storage", "cache", "clear", "delete", "space", "size")),
+    SettingsSection("request", "Request Content", Icons.Default.MovieFilter, listOf("request", "movie", "anime", "series", "content", "bot")),
     SettingsSection("about", "About", Icons.Default.Info, listOf("about", "version", "developer", "github", "website", "trixsearch"))
 )
 
@@ -341,9 +324,11 @@ fun SettingsScreen(
                             onRemoveSource = viewModel::removeUserSource
                         )
                         "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
+                        "language" -> LanguageSection(onClick = { navController.navigate(Screen.Language.route) })
                         "player" -> PlayerSection(autoPlay, streamingQuality, viewModel::setAutoPlay, onQualityClick = { showQualityDialog = true })
                         "downloads" -> DownloadsSection(wifiOnly, viewModel::setWifiOnly)
                         "storage" -> StorageSection(downloadCount, storageUsed, cacheSize, onClearCache = { showClearCacheDialog = true }, onClearAll = { showClearAllDialog = true })
+                        "request" -> RequestSection(onClick = { navController.navigate(Screen.RequestContent.route) })
                         "about" -> AboutSection()
                     }
                 }
@@ -633,6 +618,30 @@ private fun AccountSection(
 }
 
 @Composable
+private fun LanguageSection(onClick: () -> Unit) {
+    SettingsGroup("Language", Icons.Default.Language) {
+        SettingsClickRow(
+            icon = Icons.Default.Translate,
+            title = "App Language",
+            subtitle = "Change display language",
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
+private fun RequestSection(onClick: () -> Unit) {
+    SettingsGroup("Request Content", Icons.Default.MovieFilter) {
+        SettingsClickRow(
+            icon = Icons.Default.Send,
+            title = "Request a Movie / Anime / Series",
+            subtitle = "Send a request to @hasikit_m_bot via Telegram",
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
 private fun AppearanceSection(appTheme: AppTheme, onThemeClick: () -> Unit) {
     SettingsGroup("Appearance", Icons.Default.Palette) {
         SettingsClickRow(
@@ -701,6 +710,7 @@ private fun StorageSection(
 
 @Composable
 private fun AboutSection() {
+    val context = LocalContext.current
     SettingsGroup("About", Icons.Default.Info) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -722,13 +732,37 @@ private fun AboutSection() {
             Column {
                 Text("Hasikit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                 Text("Version 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("by @trixsearch", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "by @trixsearch",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/trixsearch")))
+                    }
+                )
             }
         }
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsInfoRow(Icons.Default.Code, "Open Source", "github.com/trixsearch/hasikit")
+        SettingsLinkRow(
+            icon = Icons.Default.Code,
+            title = "GitHub",
+            subtitle = "github.com/trixsearch/hasikit",
+            url = "https://github.com/trixsearch/hasikit"
+        )
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsInfoRow(Icons.Default.Language, "Website", "trixsearch.github.io/hasikit")
+        SettingsLinkRow(
+            icon = Icons.Default.Language,
+            title = "Website",
+            subtitle = "trixsearch.github.io/",
+            url = "https://trixsearch.github.io/"
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsLinkRow(
+            icon = Icons.Default.Send,
+            title = "Telegram",
+            subtitle = "@hasikit_m_bot",
+            url = "https://t.me/hasikit_m_bot"
+        )
     }
 }
 
@@ -781,6 +815,20 @@ private fun SettingsInfoRow(icon: ImageVector, title: String, subtitle: String) 
         headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
         supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
         leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+    )
+}
+
+@Composable
+private fun SettingsLinkRow(icon: ImageVector, title: String, subtitle: String, url: String) {
+    val context = LocalContext.current
+    ListItem(
+        headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
+        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) },
+        leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailingContent = { Icon(Icons.Default.OpenInNew, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        modifier = Modifier.clickable {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
     )
 }
 

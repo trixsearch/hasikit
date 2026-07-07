@@ -1,8 +1,10 @@
 package com.trixsearch.hasikit.ui.screens.search
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -42,21 +44,30 @@ class SearchViewModel @Inject constructor(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
+    private val _selectedSource = MutableStateFlow<String?>(null) // null = All
+    val selectedSource: StateFlow<String?> = _selectedSource
+
+    val availableSources: StateFlow<List<TelegramSource>> = sourceConfig.userSourcesFlow
+        .map { userSources -> sourceConfig.officialSources + userSources }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), sourceConfig.officialSources)
+
     // Cache resolved chat IDs per source identifier
     private val chatIdCache = mutableMapOf<String, Long>()
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-    val results: StateFlow<List<Video>> = _query
+    val results: StateFlow<List<Video>> = combine(_query, _selectedSource) { q, src -> q to src }
         .debounce(300)
-        .flatMapLatest { q ->
+        .flatMapLatest { (q, selectedSrc) ->
             if (q.isBlank()) return@flatMapLatest flowOf(emptyList())
             flow {
                 val allSources = buildList {
                     addAll(sourceConfig.officialSources)
                     addAll(sourceConfig.userSourcesFlow.first())
                 }
+                val filteredSources = if (selectedSrc == null) allSources
+                    else allSources.filter { it.identifier == selectedSrc }
                 val allResults = coroutineScope {
-                    allSources.map { source ->
+                    filteredSources.map { source ->
                         async {
                             val chatId = resolveChatId(source) ?: return@async emptyList<Video>()
                             channelRepository.searchChannelMedia(chatId, q)
@@ -72,6 +83,7 @@ class SearchViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setQuery(q: String) { _query.value = q }
+    fun setSelectedSource(identifier: String?) { _selectedSource.value = identifier }
 
     private suspend fun resolveChatId(source: TelegramSource): Long? {
         chatIdCache[source.identifier]?.let { return it }
@@ -100,6 +112,8 @@ fun SearchScreen(
 ) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
+    val availableSources by viewModel.availableSources.collectAsState()
+    val selectedSource by viewModel.selectedSource.collectAsState()
 
     Scaffold(
         topBar = {
@@ -131,6 +145,25 @@ fun SearchScreen(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                     )
                 )
+                Spacer(Modifier.height(8.dp))
+                // Source filter chips
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedSource == null,
+                        onClick = { viewModel.setSelectedSource(null) },
+                        label = { Text("All") }
+                    )
+                    availableSources.forEach { source ->
+                        FilterChip(
+                            selected = selectedSource == source.identifier,
+                            onClick = { viewModel.setSelectedSource(source.identifier) },
+                            label = { Text(source.displayName) }
+                        )
+                    }
+                }
             }
         }
     ) { padding ->

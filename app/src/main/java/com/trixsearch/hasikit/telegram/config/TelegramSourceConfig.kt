@@ -61,10 +61,12 @@ class TelegramSourceConfig @Inject constructor(
             identifier = "@testhasikit",
             displayName = "Hasikit",
             isOfficial = true
+        ),
+        TelegramSource(
+            identifier = "-1001420355232",
+            displayName = "Hasikit Official",
+            isOfficial = true
         )
-        // Add more official sources here:
-        // TelegramSource(identifier = "-1001234567890", displayName = "Movies", isOfficial = true),
-        // TelegramSource(identifier = "https://t.me/+privatelink", displayName = "Premium", isOfficial = true),
     )
 
     /** User-added sources stored in DataStore (serialised as comma-separated "identifier|name" pairs) */

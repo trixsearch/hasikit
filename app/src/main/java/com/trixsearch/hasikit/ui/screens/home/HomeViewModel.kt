@@ -54,8 +54,8 @@ class HomeViewModel @Inject constructor(
     private val _noAccessMessage = MutableStateFlow<String?>(null)
     val noAccessMessage: StateFlow<String?> = _noAccessMessage
 
-    // Thumbnail cache: fileId -> local file path
-    private val thumbnailCache = mutableMapOf<Long, String?>()
+    // Reactive thumbnail cache: fileId -> local file path
+    private val _thumbnailCache = MutableStateFlow<Map<Long, String?>>(emptyMap())
 
     val continueWatching: StateFlow<List<Pair<Video, WatchProgress>>> =
         repository.getAllWatchProgress()
@@ -69,8 +69,9 @@ class HomeViewModel @Inject constructor(
     val videos: StateFlow<List<Video>> = combine(
         _sourcePages,
         repository.getAllVideos(),
-        downloadManager.downloadTasks
-    ) { pages, dbVideos, downloadTasks ->
+        downloadManager.downloadTasks,
+        _thumbnailCache
+    ) { pages, dbVideos, downloadTasks, thumbCache ->
         val dbById = dbVideos.associateBy { it.id }
         pages.flatMap { page ->
             page.media.map { media ->
@@ -84,8 +85,7 @@ class HomeViewModel @Inject constructor(
                     task != null -> task.progress
                     else -> 0f
                 }
-                val thumbnail = thumbnailCache[media.thumbnailFileId]
-                    ?: db?.thumbnail
+                val thumbnail = thumbCache[media.thumbnailFileId] ?: db?.thumbnail
                 Video(
                     id = id,
                     title = media.title.ifBlank { media.fileName },
@@ -202,16 +202,13 @@ class HomeViewModel @Inject constructor(
     private fun fetchThumbnails(mediaList: List<TelegramMedia>) {
         viewModelScope.launch {
             mediaList
-                .filter { it.thumbnailFileId != null && !thumbnailCache.containsKey(it.thumbnailFileId) }
+                .filter { it.thumbnailFileId != null && !_thumbnailCache.value.containsKey(it.thumbnailFileId) }
                 .distinctBy { it.thumbnailFileId }
                 .forEach { media ->
                     val fileId = media.thumbnailFileId ?: return@forEach
                     val path = channelRepository.downloadThumbnail(fileId)
-                    thumbnailCache[fileId] = path
-                    if (path != null) {
-                        // Trigger recomposition by updating source pages
-                        _sourcePages.value = _sourcePages.value.toList()
-                    }
+                    // Emit new map copy — triggers reactive recomposition immediately
+                    _thumbnailCache.value = _thumbnailCache.value + (fileId to path)
                 }
         }
     }

@@ -18,6 +18,8 @@ import com.trixsearch.hasikit.ui.screens.home.HomeViewModel
 import com.trixsearch.hasikit.ui.screens.library.LibraryScreen
 import com.trixsearch.hasikit.ui.screens.player.PlayerScreen
 import com.trixsearch.hasikit.ui.screens.search.SearchScreen
+import com.trixsearch.hasikit.ui.screens.request.RequestContentScreen
+import com.trixsearch.hasikit.ui.screens.settings.LanguageScreen
 import com.trixsearch.hasikit.ui.screens.settings.SettingsScreen
 
 @Composable
@@ -63,6 +65,12 @@ fun NavGraph(
         composable(Screen.Settings.route) {
             SettingsScreen(navController)
         }
+        composable(Screen.RequestContent.route) {
+            RequestContentScreen(navController)
+        }
+        composable(Screen.Language.route) {
+            LanguageScreen(navController)
+        }
         composable(
             route = Screen.Player.route,
             arguments = listOf(navArgument("videoId") { type = NavType.StringType })
@@ -93,6 +101,19 @@ fun NavGraph(
                     videoUrl = video.videoUrl,
                     localPath = video.localPath,
                     telegramFileId = video.telegramFileId,
+                    onBack = { navController.popBackStack() }
+                )
+            } else {
+                // Video not yet in memory — parse composite ID and play via telegramFileId
+                val parts = videoId.split("_")
+                val telegramFileId = if (parts.size == 2) parts[1] else ""
+                PlayerScreen(
+                    videoId = videoId,
+                    title = "Loading…",
+                    player = player,
+                    videoUrl = "",
+                    localPath = null,
+                    telegramFileId = telegramFileId,
                     onBack = { navController.popBackStack() }
                 )
             }

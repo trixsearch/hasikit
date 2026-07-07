@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.*
@@ -115,6 +116,7 @@ class MainActivity : ComponentActivity() {
                             NavigationBar {
                                 val items = listOf(
                                     Triple(Screen.Home, "Home", Icons.Default.Home),
+                                    Triple(Screen.Search, "Search", Icons.Default.Search),
                                     Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
                                     Triple(Screen.Settings, "Settings", Icons.Default.Settings)
                                 )

@@ -9,6 +9,8 @@ sealed class Screen(val route: String) {
     object Library : Screen("library")
     object Settings : Screen("settings")
     object Auth : Screen("auth")
+    object RequestContent : Screen("request_content")
+    object Language : Screen("language")
     object Player : Screen("player/{videoId}") {
         fun createRoute(videoId: String): String {
             val encoded = URLEncoder.encode(videoId, "UTF-8")

@@ -130,7 +130,7 @@ fun HomeScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 CircularProgressIndicator()
                                 Spacer(Modifier.height(12.dp))
-                                Text("Loading @testhasikit…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Loading content…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -327,6 +327,7 @@ fun HorizontalVideoCard(video: Video, onClick: () -> Unit, onDownloadClick: () -
             Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (video.sourceLabel.isNotBlank()) Text(video.sourceLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     if (video.duration > 0L) Text(formatTime(video.duration), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (video.size > 0L) Text(formatBytes(video.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
