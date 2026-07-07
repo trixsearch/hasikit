@@ -55,6 +55,7 @@ class TelegramSourceConfig @Inject constructor(
      * Official sources bundled in the app.
      * Users cannot delete these.
      * Add more channels/groups here as the platform grows.
+     * Identifier
      */
     val officialSources: List<TelegramSource> = listOf(
         TelegramSource(
