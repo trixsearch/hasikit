@@ -7,9 +7,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
-import android.telephony.TelephonyManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.util.Rational
 import android.view.WindowManager
@@ -255,36 +259,95 @@ fun PlayerScreen(
     // Track whether playback was interrupted by a phone call so we can resume
     var wasPlayingBeforeCall by remember { mutableStateOf(false) }
 
-    // Added resume playback after phone calls listener
-    DisposableEffect(resumeAfterCall) {
-        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-        val listener = object : android.telephony.PhoneStateListener() {
-            @Suppress("DEPRECATION")
-            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                when (state) {
-                    TelephonyManager.CALL_STATE_RINGING,
-                    TelephonyManager.CALL_STATE_OFFHOOK -> {
-                        if (player.isPlaying.value) {
-                            wasPlayingBeforeCall = true
-                            player.pause()
+    // Audio focus: request focus before playback to prevent crashes with other media apps
+    val audioFocusRequest = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener { focusChange ->
+                    when (focusChange) {
+                        AudioManager.AUDIOFOCUS_LOSS -> player.pause()
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> player.pause()
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player.setVolume(30)
+                        AudioManager.AUDIOFOCUS_GAIN -> {
+                            player.setVolume(100)
+                            player.resume()
                         }
                     }
-                    TelephonyManager.CALL_STATE_IDLE -> {
-                        if (resumeAfterCall && wasPlayingBeforeCall) {
-                            wasPlayingBeforeCall = false
-                            player.resume()
-                        } else {
-                            wasPlayingBeforeCall = false
+                }
+                .build()
+        } else null
+    }
+
+    // Request audio focus on enter, abandon on exit
+    DisposableEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+            audioManager.requestAudioFocus(audioFocusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+        }
+        onDispose {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
+        }
+    }
+
+    // Added resume playback after phone calls — uses TelephonyCallback on API 31+, PhoneStateListener below
+    DisposableEffect(resumeAfterCall) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // API 31+: use non-deprecated TelephonyCallback
+            val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                override fun onCallStateChanged(state: Int) {
+                    when (state) {
+                        TelephonyManager.CALL_STATE_RINGING,
+                        TelephonyManager.CALL_STATE_OFFHOOK -> {
+                            if (player.isPlaying.value) { wasPlayingBeforeCall = true; player.pause() }
+                        }
+                        TelephonyManager.CALL_STATE_IDLE -> {
+                            if (resumeAfterCall && wasPlayingBeforeCall) { wasPlayingBeforeCall = false; player.resume() }
+                            else wasPlayingBeforeCall = false
                         }
                     }
                 }
             }
-        }
-        @Suppress("DEPRECATION")
-        telephonyManager.listen(listener, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
-        onDispose {
+            telephonyManager.registerTelephonyCallback(context.mainExecutor, callback)
+            onDispose { telephonyManager.unregisterTelephonyCallback(callback) }
+        } else {
+            // API < 31: use PhoneStateListener (deprecated but required for older devices)
+            val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
             @Suppress("DEPRECATION")
-            telephonyManager.listen(listener, android.telephony.PhoneStateListener.LISTEN_NONE)
+            val listener = object : PhoneStateListener() {
+                @Suppress("DEPRECATION")
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                    when (state) {
+                        TelephonyManager.CALL_STATE_RINGING,
+                        TelephonyManager.CALL_STATE_OFFHOOK -> {
+                            if (player.isPlaying.value) { wasPlayingBeforeCall = true; player.pause() }
+                        }
+                        TelephonyManager.CALL_STATE_IDLE -> {
+                            if (resumeAfterCall && wasPlayingBeforeCall) { wasPlayingBeforeCall = false; player.resume() }
+                            else wasPlayingBeforeCall = false
+                        }
+                    }
+                }
+            }
+            @Suppress("DEPRECATION")
+            telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+            onDispose {
+                @Suppress("DEPRECATION")
+                telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE)
+            }
         }
     }
 

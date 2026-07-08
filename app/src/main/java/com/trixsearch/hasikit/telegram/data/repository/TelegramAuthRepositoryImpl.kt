@@ -9,8 +9,12 @@ import com.trixsearch.hasikit.telegram.domain.model.TelegramUser
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
 import com.trixsearch.hasikit.telegram.service.TelegramClientService
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,6 +30,20 @@ class TelegramAuthRepositoryImpl @Inject constructor(
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
     override val authState: StateFlow<AuthState> = _authState
+
+    // Background scope for profile photo loading — does not block auth flow
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Load profile photo in background and update auth state with cached path
+    private fun loadAndCacheProfilePhoto(user: TelegramUser) {
+        repoScope.launch {
+            val photoPath = runCatching { clientService.loadProfilePhoto() }.getOrNull()
+            if (photoPath != null && photoPath != user.profilePhotoUrl) {
+                _authState.value = AuthState.Authenticated(user.copy(profilePhotoUrl = photoPath))
+                Log.d(TAG, "profilePhoto cached path=$photoPath")
+            }
+        }
+    }
 
     override suspend fun sendCode(phoneNumber: String): AuthResult {
         Log.d(TAG, "sendCode phone=$phoneNumber")
@@ -59,6 +77,8 @@ class TelegramAuthRepositoryImpl @Inject constructor(
                     val sessionString = clientService.exportSession()
                     sessionManager.saveSession(result.user, sessionString)
                     _authState.value = AuthState.Authenticated(result.user)
+                    // Load profile photo after successful login
+                    loadAndCacheProfilePhoto(result.user)
                     result
                 }
                 is AuthResult.Failure -> {
@@ -94,6 +114,8 @@ class TelegramAuthRepositoryImpl @Inject constructor(
             val user = clientService.importSession(sessionString)
             if (user != null) {
                 _authState.value = AuthState.Authenticated(user)
+                // Load profile photo in background after session restore
+                loadAndCacheProfilePhoto(user)
                 Log.d(TAG, "restoreSession success userId=${user.id}")
             } else {
                 Log.w(TAG, "restoreSession — importSession returned null, clearing")

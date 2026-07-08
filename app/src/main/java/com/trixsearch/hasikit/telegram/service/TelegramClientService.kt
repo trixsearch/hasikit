@@ -287,6 +287,32 @@ class TelegramClientService @Inject constructor(
         c.send(query as TdApi.Function<TdApi.Object>, handler)
     }
 
+    /**
+     * Downloads the current user's profile photo small thumbnail.
+     * TDLib caches the file locally — subsequent calls return the same path without re-downloading.
+     */
+    suspend fun loadProfilePhoto(): String? = suspendCancellableCoroutine { cont ->
+        client?.send(TdApi.GetMe()) { meResult ->
+            if (meResult !is TdApi.User || meResult.profilePhoto == null) {
+                cont.resume(null)
+                return@send
+            }
+            val smallFileId = meResult.profilePhoto!!.small.id
+            // Check if already downloaded locally — avoid redundant network call
+            client?.send(TdApi.GetFile(smallFileId)) { fileResult ->
+                if (fileResult is TdApi.File && fileResult.local.isDownloadingCompleted && fileResult.local.path.isNotBlank()) {
+                    cont.resume(fileResult.local.path)
+                    return@send
+                }
+                // Download with low priority (32 = lowest) to not block media loading
+                client?.send(TdApi.DownloadFile(smallFileId, 32, 0, 0, true)) { dlResult ->
+                    cont.resume(if (dlResult is TdApi.File && dlResult.local.path.isNotBlank()) dlResult.local.path else null)
+                }
+            }
+        }
+        cont.invokeOnCancellation {}
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private suspend fun waitForState(predicate: (TdApi.AuthorizationState) -> Boolean): Boolean {
@@ -336,5 +362,6 @@ private fun TdApi.User.toTelegramUser() = TelegramUser(
     lastName = lastName,
     username = usernames?.activeUsernames?.firstOrNull(),
     phoneNumber = phoneNumber,
+    // profilePhotoUrl populated separately via loadProfilePhoto() after auth
     profilePhotoUrl = null
 )

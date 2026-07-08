@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
+import com.trixsearch.hasikit.BuildConfig
 import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.download.HasikitDownloadManager
 import com.trixsearch.hasikit.themeDataStore
@@ -239,7 +241,7 @@ class SettingsViewModel @Inject constructor(
                 Log.d(TAG, "All storage cleared")
                 refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to clear all storage", e)`
+                Log.e(TAG, "Failed to clear all storage", e)
             }
         }
     }
@@ -313,17 +315,20 @@ private data class SettingsSection(
     val keywords: List<String>
 )
 
+// Settings section order: Account, Sources, Player, Downloads, Appearance, Language, Advanced, Request, About, Sign Out
 private val ALL_SECTIONS = listOf(
-    SettingsSection("account", "Account", Icons.Default.AccountCircle, listOf("account", "telegram", "login", "logout", "profile", "phone", "user", "force", "clear", "session")),
+    SettingsSection("account", "Account", Icons.Default.AccountCircle, listOf("account", "telegram", "login", "profile", "phone", "user")),
     SettingsSection("sources", "Telegram Sources", Icons.Default.Subscriptions, listOf("source", "channel", "telegram", "media", "content")),
-    SettingsSection("appearance", "Appearance", Icons.Default.Palette, listOf("appearance", "theme", "dark", "light", "color")),
-    SettingsSection("language", "Language", Icons.Default.Language, listOf("language", "hindi", "english", "locale", "translation")),
     SettingsSection("player", "Player", Icons.Default.PlayCircle, listOf("player", "playback", "auto", "quality", "speed", "stream", "call", "headphone", "background", "audio", "lock")),
     SettingsSection("downloads", "Downloads", Icons.Default.Download, listOf("download", "wifi", "network", "location", "folder")),
+    SettingsSection("appearance", "Appearance", Icons.Default.Palette, listOf("appearance", "theme", "dark", "light", "color")),
+    SettingsSection("language", "Language", Icons.Default.Language, listOf("language", "hindi", "english", "locale", "translation")),
     // Advanced settings section — dangerous options moved here from main settings
     SettingsSection("advanced", "Advanced Settings", Icons.Default.Tune, listOf("advanced", "cache", "clear", "delete", "telegram", "reset", "aspect", "ratio", "custom")),
     SettingsSection("request", "Request Content", Icons.Default.MovieFilter, listOf("request", "movie", "anime", "series", "content", "bot")),
-    SettingsSection("about", "About", Icons.Default.Info, listOf("about", "version", "developer", "github", "website", "trixsearch"))
+    SettingsSection("about", "About", Icons.Default.Info, listOf("about", "version", "developer", "github", "website", "trixsearch")),
+    // Sign Out moved to bottom — users rarely need it
+    SettingsSection("signout", "Sign Out", Icons.AutoMirrored.Filled.ExitToApp, listOf("logout", "sign out", "exit", "session"))
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -336,24 +341,18 @@ fun SettingsScreen(
     val wifiOnly by viewModel.wifiOnly.collectAsState()
     val autoPlay by viewModel.autoPlay.collectAsState()
     val streamingQuality by viewModel.streamingQuality.collectAsState()
-    val cacheSize by viewModel.cacheSize.collectAsState()
-    val storageUsed by viewModel.storageUsed.collectAsState()
-    val downloadCount by viewModel.downloadCount.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val userSources by viewModel.userSources.collectAsState()
     val officialSources = viewModel.officialSources
     val galleryVisible by viewModel.galleryVisible.collectAsState()
     val downloadPath by viewModel.downloadPath.collectAsState()
-    // Added new player preference states
     val resumeAfterCall by viewModel.resumeAfterCall.collectAsState()
     val pauseOnHeadphoneRemoval by viewModel.pauseOnHeadphoneRemoval.collectAsState()
     val backgroundAudio by viewModel.backgroundAudio.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
-    var showQualityDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showForceDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshStorageStats() }
 
@@ -371,7 +370,8 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    // Title Top Padding — reduce to tighten header spacing
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
@@ -421,21 +421,19 @@ fun SettingsScreen(
             ) {
                 items(visibleSections, key = { it.id }) { section ->
                     when (section.id) {
-                        "account" -> AccountSection(currentUser, onLogout = { showLogoutDialog = true }, onForceDelete = { showForceDeleteDialog = true })
+                        "account" -> AccountSection(currentUser)
                         "sources" -> TelegramSourcesSection(
                             officialSources = officialSources,
                             userSources = userSources,
                             onAddSource = viewModel::addUserSource,
                             onRemoveSource = viewModel::removeUserSource
                         )
-                        "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
-                        "language" -> LanguageSection(onClick = { navController.navigate(Screen.Language.route) })
                         "player" -> PlayerSection(
                             autoPlay = autoPlay,
                             quality = streamingQuality,
                             onAutoPlay = viewModel::setAutoPlay,
-                            onQualityClick = { showQualityDialog = true },
-                            // Pass new player preference values and callbacks
+                            // Reserved for future adaptive quality support
+                            onQualityClick = {},
                             resumeAfterCall = resumeAfterCall,
                             onResumeAfterCall = viewModel::setResumeAfterCall,
                             pauseOnHeadphoneRemoval = pauseOnHeadphoneRemoval,
@@ -451,10 +449,14 @@ fun SettingsScreen(
                             downloadPath = downloadPath,
                             onPickFolder = viewModel::setDownloadPath
                         )
+                        "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
+                        "language" -> LanguageSection(onClick = { navController.navigate(Screen.Language.route) })
                         // Advanced settings navigates to dedicated sub-screen
                         "advanced" -> AdvancedSection(onClick = { navController.navigate(Screen.AdvancedSettings.route) })
                         "request" -> RequestSection(onClick = { navController.navigate(Screen.RequestContent.route) })
                         "about" -> AboutSection()
+                        // Sign Out section — placed at bottom so users don’t tap it accidentally
+                        "signout" -> SignOutSection(onLogout = { showLogoutDialog = true })
                     }
                 }
                 item { Spacer(Modifier.height(8.dp)) }
@@ -485,29 +487,6 @@ fun SettingsScreen(
         )
     }
 
-    // Quality dialog
-    if (showQualityDialog) {
-        AlertDialog(
-            onDismissRequest = { showQualityDialog = false },
-            icon = { Icon(Icons.Default.HighQuality, null) },
-            title = { Text("Streaming Quality") },
-            text = {
-                Column {
-                    listOf("Auto", "1080p", "720p", "480p", "360p").forEach { quality ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clickable { viewModel.setStreamingQuality(quality); showQualityDialog = false }.padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = streamingQuality == quality, onClick = { viewModel.setStreamingQuality(quality); showQualityDialog = false })
-                            Text(quality, modifier = Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showQualityDialog = false }) { Text("Cancel") } }
-        )
-    }
-
     // Logout dialog
     if (showLogoutDialog) {
         AlertDialog(
@@ -530,29 +509,6 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } }
         )
     }
-
-    // Force delete session dialog
-    if (showForceDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showForceDeleteDialog = false },
-            icon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Force Clear Session", color = MaterialTheme.colorScheme.error) },
-            text = { Text("This will delete the TDLib database, all cached Telegram files, and your saved session.\n\nUse this if you are stuck in a login loop.\n\nYou will need to log in again.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.forceDeleteSession()
-                        showForceDeleteDialog = false
-                        navController.navigate(com.trixsearch.hasikit.ui.navigation.Screen.Auth.route) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Force Clear") }
-            },
-            dismissButton = { TextButton(onClick = { showForceDeleteDialog = false }) { Text("Cancel") } }
-        )
-    }
 }
 
 // ─── Section composables ──────────────────────────────────────────────────────
@@ -569,7 +525,7 @@ private fun TelegramSourcesSection(
     var newDisplayName by remember { mutableStateOf("") }
 
     SettingsGroup("Content Sources", Icons.Default.Subscriptions) {
-        // Official sources
+        // Official sources — always visible, cannot be removed
         officialSources.forEach { source ->
             ListItem(
                 headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
@@ -583,27 +539,29 @@ private fun TelegramSourcesSection(
             )
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         }
-        // User sources
-        userSources.forEach { source ->
-            ListItem(
-                headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
-                supportingContent = { Text(source.identifier, style = MaterialTheme.typography.bodySmall) },
-                leadingContent = { Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                trailingContent = {
-                    IconButton(onClick = { onRemoveSource(source.identifier) }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+        // User sources — only shown when ALLOW_USER_SOURCES is enabled
+        if (BuildConfig.ALLOW_USER_SOURCES) {
+            userSources.forEach { source ->
+                ListItem(
+                    headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
+                    supportingContent = { Text(source.identifier, style = MaterialTheme.typography.bodySmall) },
+                    leadingContent = { Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    trailingContent = {
+                        IconButton(onClick = { onRemoveSource(source.identifier) }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        }
                     }
-                }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            // Add source button — only shown when ALLOW_USER_SOURCES=true in local.properties
+            SettingsClickRow(
+                icon = Icons.Default.Add,
+                title = "Add My Source",
+                subtitle = "Add a public channel, private channel, or group",
+                onClick = { showAddDialog = true }
             )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         }
-        // Add source button
-        SettingsClickRow(
-            icon = Icons.Default.Add,
-            title = "Add My Source",
-            subtitle = "Add a public channel, private channel, or group",
-            onClick = { showAddDialog = true }
-        )
     }
 
     if (showAddDialog) {
@@ -653,9 +611,7 @@ private fun TelegramSourcesSection(
 
 @Composable
 private fun AccountSection(
-    user: com.trixsearch.hasikit.telegram.domain.model.TelegramUser?,
-    onLogout: () -> Unit,
-    onForceDelete: () -> Unit
+    user: com.trixsearch.hasikit.telegram.domain.model.TelegramUser?
 ) {
     SettingsGroup("Account", Icons.Default.AccountCircle) {
         if (user != null) {
@@ -668,37 +624,52 @@ private fun AccountSection(
                     }
                 },
                 leadingContent = {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            user.firstName.take(1).uppercase(),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                    // Profile photo: load from Telegram if available, fallback to initials avatar
+                    if (!user.profilePhotoUrl.isNullOrBlank()) {
+                        coil.compose.AsyncImage(
+                            model = if (user.profilePhotoUrl.startsWith("/")) "file://${user.profilePhotoUrl}" else user.profilePhotoUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                user.firstName.take(1).uppercase(),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        } else {
+            ListItem(
+                headlineContent = { Text("Not signed in", fontWeight = FontWeight.Medium) },
+                leadingContent = { Icon(Icons.Default.AccountCircle, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp)) }
+            )
         }
+    }
+}
+
+// Sign Out section — placed at bottom of settings list so users don’t tap it accidentally
+@Composable
+private fun SignOutSection(onLogout: () -> Unit) {
+    SettingsGroup("Sign Out", Icons.AutoMirrored.Filled.ExitToApp) {
         SettingsClickRow(
             icon = Icons.AutoMirrored.Filled.ExitToApp,
-            title = if (user != null) "Sign Out" else "Sign In",
-            subtitle = if (user != null) "Sign out of Telegram" else "Sign in with Telegram",
+            title = "Sign Out",
+            subtitle = "Sign out of your Telegram account",
             onClick = onLogout,
-            tintColor = MaterialTheme.colorScheme.error
-        )
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsClickRow(
-            icon = Icons.Default.DeleteForever,
-            title = "Force Clear Local Telegram Session",
-            subtitle = "Delete TDLib database and restart auth flow",
-            onClick = onForceDelete,
             tintColor = MaterialTheme.colorScheme.error
         )
     }
@@ -763,9 +734,9 @@ private fun PlayerSection(
     SettingsGroup("Player", Icons.Default.PlayCircle) {
         SettingsToggleRow(Icons.Default.PlayArrow, "Auto-play", "Automatically play next video", autoPlay, onAutoPlay)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        // Reserved for future adaptive quality support — Telegram currently provides only available source
-        SettingsClickRow(Icons.Default.HighQuality, "Streaming Quality", quality, onQualityClick)
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Reserved for future adaptive quality support — Telegram currently provides one source, quality UI hidden
+        // SettingsClickRow(Icons.Default.HighQuality, "Streaming Quality", quality, onQualityClick)
+        // HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         // Added resume playback after phone calls setting
         SettingsToggleRow(Icons.Default.Phone, "Resume Playback After Calls", "Auto-resume when a phone call ends", resumeAfterCall, onResumeAfterCall)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

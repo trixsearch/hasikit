@@ -22,7 +22,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
-private const val PAGE_SIZE = 50
+// Initial fetch size — load minimum 25 videos on first open
+private const val PAGE_SIZE = 25
 
 data class SourcePage(
     val source: TelegramSource,

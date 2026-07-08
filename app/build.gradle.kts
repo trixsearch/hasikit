@@ -29,6 +29,8 @@ android {
         buildConfigField("int", "TELEGRAM_API_ID", localProps.getProperty("TELEGRAM_API_ID", "0"))
         buildConfigField("String", "TELEGRAM_API_HASH", "\"${localProps.getProperty("TELEGRAM_API_HASH", "")}\"")
         buildConfigField("String", "TELEGRAM_SOURCE_CHANNEL", "\"${localProps.getProperty("TELEGRAM_SOURCE_CHANNEL", "")}\"")
+        // Feature flag: controls whether users can add their own Telegram sources
+        buildConfigField("boolean", "ALLOW_USER_SOURCES", localProps.getProperty("ALLOW_USER_SOURCES", "true"))
     }
 
     buildTypes {

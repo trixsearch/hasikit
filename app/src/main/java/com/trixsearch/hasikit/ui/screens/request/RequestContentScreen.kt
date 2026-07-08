@@ -4,8 +4,10 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -157,6 +159,8 @@ fun RequestContentScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                // imePadding ensures keyboard does not overlap form fields
+                .imePadding()
         ) {
             // Chat-like message area showing sent requests
             LazyColumn(
@@ -248,11 +252,12 @@ fun RequestContentScreen(
 
             HorizontalDivider()
 
-            // Input form area
+            // Input form area — scrollable so fields stay visible when keyboard is open
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

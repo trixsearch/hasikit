@@ -68,15 +68,38 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     private suspend fun openChatById(chatId: Long): Result<Long> {
         Log.d(TAG, "openChatById chatId=$chatId")
         return suspendCancellableCoroutine { cont ->
+            // First attempt: GetChat (works if chat is already in local cache)
             clientService.send(TdApi.GetChat(chatId)) { result ->
                 when (result) {
                     is TdApi.Chat -> {
                         Log.i(TAG, "openChatById resolved id=${result.id} title=${result.title}")
+                        // OpenChat signals TDLib to keep this chat active and load messages
+                        clientService.send(TdApi.OpenChat(result.id)) {}
                         cont.resume(Result.success(result.id))
                     }
                     is TdApi.Error -> {
-                        Log.e(TAG, "openChatById error ${result.code}: ${result.message}")
-                        cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                        Log.w(TAG, "openChatById GetChat failed ${result.code}: ${result.message}, trying SearchChatsNearby fallback")
+                        // Fallback: try to load the supergroup directly via GetSupergroup
+                        // Supergroup IDs are stored as -(1000000000000 + supergroupId) in TDLib
+                        val supergroupId = (-chatId - 1000000000000L)
+                        if (supergroupId > 0) {
+                            // CreateSupergroupChat expects Long supergroupId
+                            clientService.send(TdApi.CreateSupergroupChat(supergroupId, false)) { sgResult ->
+                                when (sgResult) {
+                                    is TdApi.Chat -> {
+                                        Log.i(TAG, "openChatById via CreateSupergroupChat id=${sgResult.id}")
+                                        clientService.send(TdApi.OpenChat(sgResult.id)) {}
+                                        cont.resume(Result.success(sgResult.id))
+                                    }
+                                    else -> {
+                                        Log.e(TAG, "openChatById CreateSupergroupChat failed: $sgResult")
+                                        cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                                    }
+                                }
+                            }
+                        } else {
+                            cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                        }
                     }
                     else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                 }

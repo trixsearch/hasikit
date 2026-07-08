@@ -89,7 +89,8 @@ fun HomeScreen(
                         )
                     )
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    // Title Top Padding — reduce to tighten header spacing
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PlayCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
