@@ -481,11 +481,21 @@ fun PlayerScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply { this.player = player.getPlayerInstance(); useController = false; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT }
+                PlayerView(ctx).apply {
+                    this.player = player.getPlayerInstance()
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    // Force layout pass so the video surface renders immediately on first attach
+                    post { requestLayout() }
+                }
             },
             update = { view ->
                 val instance = player.getPlayerInstance()
-                if (view.player !== instance) view.player = instance
+                if (view.player !== instance) {
+                    view.player = instance
+                    // Re-trigger layout when player instance changes to ensure surface is visible
+                    view.post { view.requestLayout() }
+                }
                 view.resizeMode = fitMode.resizeMode
                 view.scaleX = videoScale; view.scaleY = videoScale
             },
