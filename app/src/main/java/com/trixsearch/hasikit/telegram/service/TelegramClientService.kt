@@ -281,6 +281,8 @@ class TelegramClientService @Inject constructor(
         val c = client
         if (c == null) {
             Log.e(TAG, "send() called but client is null — query=${query::class.java.simpleName}")
+            // Deliver an error so suspendCancellableCoroutine callers don't hang forever
+            handler.onResult(TdApi.Error(500, "TDLib client not initialised"))
             return
         }
         @Suppress("UNCHECKED_CAST")

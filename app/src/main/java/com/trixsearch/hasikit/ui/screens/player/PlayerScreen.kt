@@ -130,25 +130,49 @@ class PlayerViewModel @Inject constructor(
         val fileId = telegramFileId.toLongOrNull()?.toInt() ?: return@withContext null
         Log.d(TAG, "resolvePlayUrl fileId=$fileId")
 
-        // Check if already fully downloaded
+        // Check if already fully downloaded before issuing a new DownloadFile request
         val existing = getFileInfo(fileId)
         if (existing?.local?.isDownloadingCompleted == true && existing.local.path.isNotBlank()) {
             Log.d(TAG, "resolvePlayUrl fileId=$fileId already complete path=${existing.local.path}")
             return@withContext "file://${existing.local.path}"
         }
 
-        // Start download with high priority (1 = highest)
-        telegramClientService.send(TdApi.DownloadFile(fileId, 1, 0, 0, false)) { result ->
-            when (result) {
-                is TdApi.File -> Log.d(TAG, "resolvePlayUrl DownloadFile started fileId=$fileId path=${result.local.path}")
-                is TdApi.Error -> Log.e(TAG, "resolvePlayUrl DownloadFile error ${result.code}: ${result.message}")
+        // If TDLib already has a path (partial download in progress), return it immediately
+        if (existing?.local?.path?.isNotBlank() == true && existing.local.downloadedSize > 0) {
+            Log.d(TAG, "resolvePlayUrl fileId=$fileId partial path=${existing.local.path} downloaded=${existing.local.downloadedSize}")
+            return@withContext "file://${existing.local.path}"
+        }
+
+        // Start download with high priority (1 = highest), synchronous=true so TDLib allocates path immediately
+        val downloadResult = suspendCancellableCoroutine<TdApi.File?> { cont ->
+            telegramClientService.send(TdApi.DownloadFile(fileId, 1, 0, 0, true)) { result ->
+                when (result) {
+                    is TdApi.File -> {
+                        Log.d(TAG, "resolvePlayUrl DownloadFile result fileId=$fileId path=${result.local.path} active=${result.local.isDownloadingActive} complete=${result.local.isDownloadingCompleted}")
+                        cont.resume(result)
+                    }
+                    is TdApi.Error -> {
+                        Log.e(TAG, "resolvePlayUrl DownloadFile error ${result.code}: ${result.message}")
+                        cont.resume(null)
+                    }
+                    else -> cont.resume(null)
+                }
+            }
+            cont.invokeOnCancellation {}
+        }
+
+        // If synchronous DownloadFile returned a usable path, return it immediately
+        if (downloadResult != null) {
+            val local = downloadResult.local
+            if (local.path.isNotBlank() && (local.isDownloadingCompleted || local.isDownloadingActive || local.downloadedSize > 0)) {
+                Log.d(TAG, "resolvePlayUrl immediate path fileId=$fileId path=${local.path}")
+                return@withContext "file://${local.path}"
             }
         }
 
-        // Wait until TDLib has downloaded enough to start streaming
-        // We need: isDownloadingActive=true AND path is set AND downloadedSize > 0
+        // Poll until TDLib allocates the file path (path becomes non-blank once TDLib reserves disk space)
         var attempts = 0
-        while (attempts < 90) { // 90s max
+        while (attempts < 60) { // 60s max
             val file = getFileInfo(fileId)
             if (file != null) {
                 val local = file.local
@@ -157,13 +181,19 @@ class PlayerViewModel @Inject constructor(
                         Log.d(TAG, "resolvePlayUrl complete fileId=$fileId path=${local.path}")
                         return@withContext "file://${local.path}"
                     }
-                    local.isDownloadingActive && local.path.isNotBlank() && local.downloadedSize > 0 -> {
+                    // Return as soon as path is allocated — ExoPlayer can stream from a partial file
+                    local.path.isNotBlank() && local.downloadedSize > 0 -> {
                         Log.d(TAG, "resolvePlayUrl streaming fileId=$fileId path=${local.path} downloaded=${local.downloadedSize}")
+                        return@withContext "file://${local.path}"
+                    }
+                    // Path allocated but no bytes yet — still return so ExoPlayer can start buffering
+                    local.path.isNotBlank() && local.isDownloadingActive -> {
+                        Log.d(TAG, "resolvePlayUrl path allocated fileId=$fileId path=${local.path}")
                         return@withContext "file://${local.path}"
                     }
                 }
             }
-            delay(1000)
+            delay(500)
             attempts++
         }
         Log.e(TAG, "resolvePlayUrl timeout fileId=$fileId")
@@ -193,8 +223,6 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-
-    remember(videoId) { player.initialize() }
 
     val isPlaying by player.isPlaying.collectAsState()
     val isBuffering by player.isBuffering.collectAsState()
@@ -303,6 +331,7 @@ fun PlayerScreen(
     }
 
     // Added resume playback after phone calls — uses TelephonyCallback on API 31+, PhoneStateListener below
+    // Wrapped in try-catch: SecurityException thrown if READ_PHONE_STATE permission is denied at runtime
     DisposableEffect(resumeAfterCall) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // API 31+: use non-deprecated TelephonyCallback
@@ -321,8 +350,15 @@ fun PlayerScreen(
                     }
                 }
             }
-            telephonyManager.registerTelephonyCallback(context.mainExecutor, callback)
-            onDispose { telephonyManager.unregisterTelephonyCallback(callback) }
+            // Guard against SecurityException if READ_PHONE_STATE permission is not granted
+            val registered = try {
+                telephonyManager.registerTelephonyCallback(context.mainExecutor, callback)
+                true
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Cannot register TelephonyCallback — READ_PHONE_STATE not granted: ${e.message}")
+                false
+            }
+            onDispose { if (registered) telephonyManager.unregisterTelephonyCallback(callback) }
         } else {
             // API < 31: use PhoneStateListener (deprecated but required for older devices)
             val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
@@ -342,11 +378,20 @@ fun PlayerScreen(
                     }
                 }
             }
-            @Suppress("DEPRECATION")
-            telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
-            onDispose {
+            // Guard against SecurityException if READ_PHONE_STATE permission is not granted
+            val registered = try {
                 @Suppress("DEPRECATION")
-                telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE)
+                telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+                true
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Cannot register PhoneStateListener — READ_PHONE_STATE not granted: ${e.message}")
+                false
+            }
+            onDispose {
+                if (registered) {
+                    @Suppress("DEPRECATION")
+                    telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE)
+                }
             }
         }
     }
@@ -405,6 +450,8 @@ fun PlayerScreen(
     DisposableEffect(videoId) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope.launch {
+            // Re-initialize player in case it was released by a previous session
+            player.initialize()
             val startPos = viewModel.getInitialPosition(videoId)
             val resolvedUrl = when {
                 playUrl.isNotBlank() -> playUrl
@@ -418,7 +465,8 @@ fun PlayerScreen(
         onDispose {
             scope.cancel()
             viewModel.saveProgress(videoId, player.getCurrentPosition(), player.getDuration())
-            player.release()
+            // Stop and reset player instead of full release — player is @Singleton and reused across screens
+            player.stop()
         }
     }
 

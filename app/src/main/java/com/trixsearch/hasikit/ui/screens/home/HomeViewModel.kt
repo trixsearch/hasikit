@@ -129,14 +129,15 @@ class HomeViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             authRepository.authState.collect { state ->
+                // Only load sources when fully authenticated, not during Loading state
                 if (state is AuthState.Authenticated && _sourcePages.value.isEmpty()) {
                     loadAllSources()
                 }
             }
         }
-        // Also observe user-added sources
+        // Reload only when user sources actually change (not on every resume)
         viewModelScope.launch {
-            sourceConfig.userSourcesFlow.collect {
+            sourceConfig.userSourcesFlow.drop(1).collect {
                 if (authRepository.authState.value is AuthState.Authenticated) {
                     loadAllSources()
                 }

@@ -219,6 +219,22 @@ class HasikitPlayer @Inject constructor(
     fun pause() { exoPlayer?.pause(); Log.d(TAG, "[PAUSE] pos=${exoPlayer?.currentPosition}ms") }
     fun resume() { exoPlayer?.play(); Log.d(TAG, "[RESUME] pos=${exoPlayer?.currentPosition}ms") }
 
+    // Stops playback and resets media without destroying the ExoPlayer instance
+    fun stop() {
+        Log.d(TAG, "[STOP] pos=${exoPlayer?.currentPosition}ms")
+        exoPlayer?.stop()
+        exoPlayer?.clearMediaItems()
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _error.value = null
+        _playbackSpeed.value = 1f
+        _audioTracks.value = emptyList()
+        _subtitleTracks.value = emptyList()
+        // Reset playback speed to normal
+        exoPlayer?.playbackParameters = PlaybackParameters(1f)
+        Log.d(TAG, "[STOP] done")
+    }
+
     fun seekTo(position: Long) {
         val clamped = position.coerceAtLeast(0L)
         Log.d(TAG, "[SEEK] ${clamped}ms")

@@ -91,10 +91,10 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.config.ktx)
-    implementation(libs.firebase.analytics.ktx)
+    // Firebase — disabled until google-services.json is configured
+    // Future: implementation(platform(libs.firebase.bom))
+    // Future: implementation(libs.firebase.config.ktx)
+    // Future: implementation(libs.firebase.analytics.ktx)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

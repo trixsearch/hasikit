@@ -46,9 +46,7 @@ fun AuthScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
-    LaunchedEffect(authState) {
-        if (authState is AuthState.Authenticated) onAuthenticated()
-    }
+    // Navigation to Home is handled by NavGraph's LaunchedEffect to avoid double-navigation
 
     Box(
         modifier = Modifier
@@ -62,6 +60,16 @@ fun AuthScreen(
             label = "auth_transition"
         ) { state ->
             when (state) {
+                is AuthState.Loading -> {
+                    // Show splash while session restore is in progress
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            HasikitLogo(80)
+                            Spacer(Modifier.height(24.dp))
+                            CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.dp)
+                        }
+                    }
+                }
                 is AuthState.CodeSent -> OtpScreen(
                     phone = state.phone,
                     isLoading = isLoading,

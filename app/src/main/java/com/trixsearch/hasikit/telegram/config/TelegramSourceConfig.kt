@@ -22,11 +22,14 @@ private val KEY_USER_SOURCES = stringPreferencesKey("user_sources")
  *   - @username  (public channel/group)
  *   - -1001234567890  (numeric chat ID)
  *   - https://t.me/+xxxxxxxx  (private invite link)
+ * inviteLink is optional — used as fallback when chatId resolution fails for private channels.
  */
 data class TelegramSource(
     val identifier: String,
     val displayName: String,
-    val isOfficial: Boolean = false
+    val isOfficial: Boolean = false,
+    // Optional invite link — used as fallback for private channels the user already joined
+    val inviteLink: String? = null
 ) {
     /** Normalised for SearchPublicChat — strips @ and https://t.me/ */
     val username: String
@@ -60,13 +63,14 @@ class TelegramSourceConfig @Inject constructor(
     val officialSources: List<TelegramSource> = listOf(
         TelegramSource(
             identifier = "@testhasikit",
-            displayName = "Hasikit",
+            displayName = "TestHasikit",
             isOfficial = true
         ),
         TelegramSource(
             identifier = "-1001420355232",
-            displayName = "Hasikit Official",
-            isOfficial = true
+            displayName = "Hasikit",
+            isOfficial = true,
+            inviteLink = "https://t.me/+KxXHaRdAledkYjM9"
         )
     )
 

@@ -28,7 +28,7 @@ class TelegramAuthRepositoryImpl @Inject constructor(
     private val sessionManager: TelegramSessionManager
 ) : TelegramAuthRepository {
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     override val authState: StateFlow<AuthState> = _authState
 
     // Background scope for profile photo loading — does not block auth flow

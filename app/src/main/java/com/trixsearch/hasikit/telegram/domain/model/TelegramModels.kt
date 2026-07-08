@@ -24,6 +24,7 @@ data class TelegramChannel(
 )
 
 sealed class AuthState {
+    object Loading : AuthState()          // Session restore in progress
     object Unauthenticated : AuthState()
     data class CodeSent(val phone: String, val phoneCodeHash: String) : AuthState()
     data class Authenticated(val user: TelegramUser) : AuthState()

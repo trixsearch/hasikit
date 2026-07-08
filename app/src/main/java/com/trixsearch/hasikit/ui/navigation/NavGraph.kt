@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -34,16 +35,21 @@ fun NavGraph(
     val homeViewModel: HomeViewModel = hiltViewModel()
     val videos by homeViewModel.videos.collectAsState()
 
-    val startDestination = when (authState) {
-        is AuthState.Authenticated -> Screen.Home.route
-        else -> Screen.Auth.route
-    }
-
+    // Always start on Auth; navigate to Home once session restore confirms authenticated.
+    // This avoids the race where startDestination is computed before restoreSession completes.
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = Screen.Auth.route
     ) {
         composable(Screen.Auth.route) {
+            // If already authenticated (session restored), skip straight to Home
+            LaunchedEffect(authState) {
+                if (authState is AuthState.Authenticated) {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Auth.route) { inclusive = true }
+                    }
+                }
+            }
             AuthScreen(
                 onAuthenticated = {
                     navController.navigate(Screen.Home.route) {

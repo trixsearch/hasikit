@@ -123,13 +123,15 @@ class HasikitDownloadManager @Inject constructor(
     private suspend fun monitorDownload(videoId: String) {
         try {
             var running = true
+            // Grace period: TDLib may take a few seconds to start downloading after DownloadFile is sent
+            var stallCount = 0
+            val stallThreshold = 5 // 5 consecutive inactive polls = stalled
             while (running) {
                 val task = repository.getDownload(videoId)
                 if (task == null || task.state == DownloadState.COMPLETED || task.state == DownloadState.FAILED) {
                     running = false
                     continue
                 }
-                // Stop monitoring if paused — do NOT mark as failed
                 if (task.state == DownloadState.PAUSED || pausedIds.contains(videoId)) {
                     running = false
                     continue
@@ -148,27 +150,39 @@ class HasikitDownloadManager @Inject constructor(
                 val local = file.local
                 val progress = if (file.size > 0) local.downloadedSize.toFloat() / file.size else 0f
 
-                if (local.isDownloadingCompleted) {
-                    val destPath = copyToMoviesDir(local.path, video.title, video.id)
-                    Log.d(TAG, "Download COMPLETE videoId=$videoId path=$destPath")
-                    repository.saveDownload(task.copy(state = DownloadState.COMPLETED, progress = 1f, localPath = destPath))
-                    repository.updateVideo(video.copy(isDownloaded = true, localPath = destPath, downloadProgress = 1f))
-                    running = false
-                } else if (!local.isDownloadingActive) {
-                    // Not active and not paused intentionally — check if we just paused
-                    if (pausedIds.contains(videoId)) {
-                        running = false
-                    } else {
-                        Log.w(TAG, "Download stalled videoId=$videoId — marking FAILED")
-                        repository.saveDownload(task.copy(state = DownloadState.FAILED))
+                when {
+                    local.isDownloadingCompleted -> {
+                        val destPath = copyToMoviesDir(local.path, video.title, video.id)
+                        Log.d(TAG, "Download COMPLETE videoId=$videoId path=$destPath")
+                        repository.saveDownload(task.copy(state = DownloadState.COMPLETED, progress = 1f, localPath = destPath))
+                        repository.updateVideo(video.copy(isDownloaded = true, localPath = destPath, downloadProgress = 1f))
                         running = false
                     }
-                } else {
-                    if (progress != task.progress) {
-                        repository.saveDownload(task.copy(progress = progress))
-                        Log.d(TAG, "Download PROGRESS videoId=$videoId ${(progress * 100).toInt()}% (${local.downloadedSize}/${file.size})")
+                    local.isDownloadingActive -> {
+                        // Reset stall counter while actively downloading
+                        stallCount = 0
+                        if (progress != task.progress) {
+                            repository.saveDownload(task.copy(progress = progress))
+                            Log.d(TAG, "Download PROGRESS videoId=$videoId ${(progress * 100).toInt()}% (${local.downloadedSize}/${file.size})")
+                        }
+                        delay(1000)
                     }
-                    delay(1000)
+                    else -> {
+                        // Not active — count consecutive inactive polls before marking failed
+                        if (pausedIds.contains(videoId)) {
+                            running = false
+                        } else {
+                            stallCount++
+                            if (stallCount >= stallThreshold) {
+                                Log.w(TAG, "Download stalled videoId=$videoId after $stallCount polls — marking FAILED")
+                                repository.saveDownload(task.copy(state = DownloadState.FAILED))
+                                running = false
+                            } else {
+                                Log.d(TAG, "Download inactive videoId=$videoId stallCount=$stallCount — waiting")
+                                delay(2000)
+                            }
+                        }
+                    }
                 }
             }
         } finally {
