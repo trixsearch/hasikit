@@ -2,9 +2,12 @@ package com.trixsearch.hasikit.ui.screens.settings
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -54,6 +57,16 @@ private val Context.settingsDataStore by preferencesDataStore(name = "hasikit_se
 private val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only_downloads")
 private val KEY_AUTO_PLAY = booleanPreferencesKey("auto_play")
 private val KEY_STREAMING_QUALITY = stringPreferencesKey("streaming_quality")
+private val KEY_GALLERY_VISIBLE = booleanPreferencesKey("gallery_visible")
+private val KEY_DOWNLOAD_PATH = stringPreferencesKey("download_path")
+// Added resume playback after phone calls setting
+private val KEY_RESUME_AFTER_CALL = booleanPreferencesKey("resume_after_call")
+// Added pause on headphone removal setting
+private val KEY_PAUSE_ON_HEADPHONE_REMOVAL = booleanPreferencesKey("pause_on_headphone_removal")
+// Added background audio (continue when screen locked) setting
+private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
+// Added custom aspect ratios stored as comma-separated W:H strings
+private val KEY_CUSTOM_ASPECT_RATIOS = stringPreferencesKey("custom_aspect_ratios")
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -92,6 +105,93 @@ class SettingsViewModel @Inject constructor(
     fun setWifiOnly(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_WIFI_ONLY] = v } }
     fun setAutoPlay(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_AUTO_PLAY] = v } }
     fun setStreamingQuality(v: String) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_STREAMING_QUALITY] = v } }
+
+    // Added resume after call preference
+    val resumeAfterCall: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_RESUME_AFTER_CALL] ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // Added pause on headphone removal preference
+    val pauseOnHeadphoneRemoval: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_PAUSE_ON_HEADPHONE_REMOVAL] ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // Added background audio (continue when screen locked) preference
+    val backgroundAudio: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_BACKGROUND_AUDIO] ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // Added custom aspect ratios stored as comma-separated W:H strings
+    val customAspectRatios: StateFlow<List<String>> = context.settingsDataStore.data
+        .map { prefs ->
+            val raw = prefs[KEY_CUSTOM_ASPECT_RATIOS] ?: ""
+            if (raw.isBlank()) emptyList() else raw.split(",").filter { it.isNotBlank() }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setResumeAfterCall(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_RESUME_AFTER_CALL] = v } }
+    fun setPauseOnHeadphoneRemoval(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_PAUSE_ON_HEADPHONE_REMOVAL] = v } }
+    fun setBackgroundAudio(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_BACKGROUND_AUDIO] = v } }
+
+    fun addCustomAspectRatio(ratio: String) {
+        viewModelScope.launch {
+            val current = customAspectRatios.value.toMutableList()
+            if (!current.contains(ratio.trim())) {
+                current.add(ratio.trim())
+                context.settingsDataStore.edit { it[KEY_CUSTOM_ASPECT_RATIOS] = current.joinToString(",") }
+            }
+        }
+    }
+
+    fun removeCustomAspectRatio(ratio: String) {
+        viewModelScope.launch {
+            val updated = customAspectRatios.value.filter { it != ratio }
+            context.settingsDataStore.edit { it[KEY_CUSTOM_ASPECT_RATIOS] = updated.joinToString(",") }
+        }
+    }
+
+    val galleryVisible: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_GALLERY_VISIBLE] ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val downloadPath: StateFlow<String> = context.settingsDataStore.data
+        .map { it[KEY_DOWNLOAD_PATH] ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    init {
+        // Sync persisted download path to download manager on startup
+        viewModelScope.launch {
+            downloadPath.collect { path ->
+                if (path.isNotBlank()) downloadManager.customDownloadPath.value = path
+            }
+        }
+    }
+
+    fun setGalleryVisible(v: Boolean) {
+        viewModelScope.launch {
+            context.settingsDataStore.edit { it[KEY_GALLERY_VISIBLE] = v }
+            if (v) scanDownloadedFilesIntoGallery()
+        }
+    }
+
+    fun setDownloadPath(uri: String) {
+        viewModelScope.launch {
+            context.settingsDataStore.edit { it[KEY_DOWNLOAD_PATH] = uri }
+            downloadManager.customDownloadPath.value = uri
+        }
+    }
+
+    private fun scanDownloadedFilesIntoGallery() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val dir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return@launch
+            val files = dir.listFiles()?.filter { it.isFile } ?: return@launch
+            if (files.isEmpty()) return@launch
+            val paths = files.map { it.absolutePath }.toTypedArray()
+            MediaScannerConnection.scanFile(context, paths, null) { path, _ ->
+                Log.d(TAG, "MediaScanner scanned: $path")
+            }
+        }
+    }
 
     // Storage stats
     private val _cacheSize = MutableStateFlow(0L)
@@ -139,7 +239,7 @@ class SettingsViewModel @Inject constructor(
                 Log.d(TAG, "All storage cleared")
                 refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to clear all storage", e)
+                Log.e(TAG, "Failed to clear all storage", e)`
             }
         }
     }
@@ -218,9 +318,10 @@ private val ALL_SECTIONS = listOf(
     SettingsSection("sources", "Telegram Sources", Icons.Default.Subscriptions, listOf("source", "channel", "telegram", "media", "content")),
     SettingsSection("appearance", "Appearance", Icons.Default.Palette, listOf("appearance", "theme", "dark", "light", "color")),
     SettingsSection("language", "Language", Icons.Default.Language, listOf("language", "hindi", "english", "locale", "translation")),
-    SettingsSection("player", "Player", Icons.Default.PlayCircle, listOf("player", "playback", "auto", "quality", "speed", "stream")),
+    SettingsSection("player", "Player", Icons.Default.PlayCircle, listOf("player", "playback", "auto", "quality", "speed", "stream", "call", "headphone", "background", "audio", "lock")),
     SettingsSection("downloads", "Downloads", Icons.Default.Download, listOf("download", "wifi", "network", "location", "folder")),
-    SettingsSection("storage", "Storage", Icons.Default.Storage, listOf("storage", "cache", "clear", "delete", "space", "size")),
+    // Advanced settings section — dangerous options moved here from main settings
+    SettingsSection("advanced", "Advanced Settings", Icons.Default.Tune, listOf("advanced", "cache", "clear", "delete", "telegram", "reset", "aspect", "ratio", "custom")),
     SettingsSection("request", "Request Content", Icons.Default.MovieFilter, listOf("request", "movie", "anime", "series", "content", "bot")),
     SettingsSection("about", "About", Icons.Default.Info, listOf("about", "version", "developer", "github", "website", "trixsearch"))
 )
@@ -241,11 +342,15 @@ fun SettingsScreen(
     val currentUser by viewModel.currentUser.collectAsState()
     val userSources by viewModel.userSources.collectAsState()
     val officialSources = viewModel.officialSources
+    val galleryVisible by viewModel.galleryVisible.collectAsState()
+    val downloadPath by viewModel.downloadPath.collectAsState()
+    // Added new player preference states
+    val resumeAfterCall by viewModel.resumeAfterCall.collectAsState()
+    val pauseOnHeadphoneRemoval by viewModel.pauseOnHeadphoneRemoval.collectAsState()
+    val backgroundAudio by viewModel.backgroundAudio.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var showQualityDialog by remember { mutableStateOf(false) }
-    var showClearCacheDialog by remember { mutableStateOf(false) }
-    var showClearAllDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showForceDeleteDialog by remember { mutableStateOf(false) }
@@ -325,9 +430,29 @@ fun SettingsScreen(
                         )
                         "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
                         "language" -> LanguageSection(onClick = { navController.navigate(Screen.Language.route) })
-                        "player" -> PlayerSection(autoPlay, streamingQuality, viewModel::setAutoPlay, onQualityClick = { showQualityDialog = true })
-                        "downloads" -> DownloadsSection(wifiOnly, viewModel::setWifiOnly)
-                        "storage" -> StorageSection(downloadCount, storageUsed, cacheSize, onClearCache = { showClearCacheDialog = true }, onClearAll = { showClearAllDialog = true })
+                        "player" -> PlayerSection(
+                            autoPlay = autoPlay,
+                            quality = streamingQuality,
+                            onAutoPlay = viewModel::setAutoPlay,
+                            onQualityClick = { showQualityDialog = true },
+                            // Pass new player preference values and callbacks
+                            resumeAfterCall = resumeAfterCall,
+                            onResumeAfterCall = viewModel::setResumeAfterCall,
+                            pauseOnHeadphoneRemoval = pauseOnHeadphoneRemoval,
+                            onPauseOnHeadphoneRemoval = viewModel::setPauseOnHeadphoneRemoval,
+                            backgroundAudio = backgroundAudio,
+                            onBackgroundAudio = viewModel::setBackgroundAudio
+                        )
+                        "downloads" -> DownloadsSection(
+                            wifiOnly = wifiOnly,
+                            onWifiOnly = viewModel::setWifiOnly,
+                            galleryVisible = galleryVisible,
+                            onGalleryVisible = viewModel::setGalleryVisible,
+                            downloadPath = downloadPath,
+                            onPickFolder = viewModel::setDownloadPath
+                        )
+                        // Advanced settings navigates to dedicated sub-screen
+                        "advanced" -> AdvancedSection(onClick = { navController.navigate(Screen.AdvancedSettings.route) })
                         "request" -> RequestSection(onClick = { navController.navigate(Screen.RequestContent.route) })
                         "about" -> AboutSection()
                     }
@@ -380,44 +505,6 @@ fun SettingsScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showQualityDialog = false }) { Text("Cancel") } }
-        )
-    }
-
-    // Clear cache dialog
-    if (showClearCacheDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCacheDialog = false },
-            icon = { Icon(Icons.Default.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Clear Cache") },
-            text = { Text("Delete ${formatBytes(cacheSize)} of cached data? Downloaded videos are not affected.") },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.clearCache(); showClearCacheDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Clear") }
-            },
-            dismissButton = { TextButton(onClick = { showClearCacheDialog = false }) { Text("Cancel") } }
-        )
-    }
-
-    // Clear ALL storage dialog
-    if (showClearAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearAllDialog = false },
-            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("⚠ WARNING", color = MaterialTheme.colorScheme.error) },
-            text = {
-                Text(
-                    "This will permanently delete all downloaded videos, cached media, and download metadata.\n\nThis action cannot be undone."
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.clearAllStorage(); showClearAllDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete Everything") }
-            },
-            dismissButton = { TextButton(onClick = { showClearAllDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -658,23 +745,90 @@ private fun AppearanceSection(appTheme: AppTheme, onThemeClick: () -> Unit) {
 }
 
 @Composable
-private fun PlayerSection(autoPlay: Boolean, quality: String, onAutoPlay: (Boolean) -> Unit, onQualityClick: () -> Unit) {
+private fun PlayerSection(
+    autoPlay: Boolean,
+    quality: String,
+    onAutoPlay: (Boolean) -> Unit,
+    onQualityClick: () -> Unit,
+    // Added resume after call toggle
+    resumeAfterCall: Boolean,
+    onResumeAfterCall: (Boolean) -> Unit,
+    // Added pause on headphone removal toggle
+    pauseOnHeadphoneRemoval: Boolean,
+    onPauseOnHeadphoneRemoval: (Boolean) -> Unit,
+    // Added background audio (continue when screen locked) toggle
+    backgroundAudio: Boolean,
+    onBackgroundAudio: (Boolean) -> Unit
+) {
     SettingsGroup("Player", Icons.Default.PlayCircle) {
         SettingsToggleRow(Icons.Default.PlayArrow, "Auto-play", "Automatically play next video", autoPlay, onAutoPlay)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Reserved for future adaptive quality support — Telegram currently provides only available source
         SettingsClickRow(Icons.Default.HighQuality, "Streaming Quality", quality, onQualityClick)
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Added resume playback after phone calls setting
+        SettingsToggleRow(Icons.Default.Phone, "Resume Playback After Calls", "Auto-resume when a phone call ends", resumeAfterCall, onResumeAfterCall)
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Added pause on headphone removal setting
+        SettingsToggleRow(Icons.Default.HeadsetOff, "Pause On Headphone Removal", "Pause when headphones are disconnected", pauseOnHeadphoneRemoval, onPauseOnHeadphoneRemoval)
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Added background audio (continue when screen locked) setting
+        SettingsToggleRow(Icons.Default.ScreenLockPortrait, "Continue Audio When Screen Locked", "Keep playing audio when screen turns off", backgroundAudio, onBackgroundAudio)
+    }
+}
+
+// Added Advanced Settings entry point — dangerous options moved here from main settings
+@Composable
+private fun AdvancedSection(onClick: () -> Unit) {
+    SettingsGroup("Advanced Settings", Icons.Default.Tune) {
+        SettingsClickRow(
+            icon = Icons.Default.Tune,
+            title = "Advanced Settings",
+            subtitle = "Cache, Telegram reset, custom aspect ratios",
+            onClick = onClick
+        )
     }
 }
 
 @Composable
-private fun DownloadsSection(wifiOnly: Boolean, onWifiOnly: (Boolean) -> Unit) {
+private fun DownloadsSection(
+    wifiOnly: Boolean,
+    onWifiOnly: (Boolean) -> Unit,
+    galleryVisible: Boolean,
+    onGalleryVisible: (Boolean) -> Unit,
+    downloadPath: String,
+    onPickFolder: (String) -> Unit
+) {
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { onPickFolder(it.toString()) }
+    }
+    val displayPath = when {
+        downloadPath.isBlank() -> "App-specific storage (default)"
+        else -> try { Uri.parse(downloadPath).lastPathSegment ?: downloadPath } catch (e: Exception) { downloadPath }
+    }
     SettingsGroup("Downloads", Icons.Default.Download) {
         SettingsToggleRow(Icons.Default.Wifi, "Wi-Fi Only", "Only download on Wi-Fi", wifiOnly, onWifiOnly)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsInfoRow(Icons.Default.FolderOpen, "Download Location", "Movies (app-specific storage)")
+        SettingsClickRow(
+            icon = Icons.Default.FolderOpen,
+            title = "Download Location",
+            subtitle = displayPath,
+            onClick = { folderPickerLauncher.launch(null) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsToggleRow(
+            icon = Icons.Default.PhotoLibrary,
+            title = "Show in Gallery",
+            subtitle = "Make downloaded videos visible in Gallery apps",
+            checked = galleryVisible,
+            onCheckedChange = onGalleryVisible
+        )
     }
 }
 
+// Storage section shows stats only — dangerous clear actions moved to AdvancedSettings
 @Composable
 private fun StorageSection(
     downloadCount: Int,
@@ -689,22 +843,6 @@ private fun StorageSection(
         SettingsInfoRow(Icons.Default.Download, "Downloads Used", formatBytes(storageUsed))
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         SettingsInfoRow(Icons.Default.Cached, "Cache Size", formatBytes(cacheSize))
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsClickRow(
-            icon = Icons.Default.DeleteSweep,
-            title = "Clear Cache",
-            subtitle = if (cacheSize > 0) "Free up ${formatBytes(cacheSize)}" else "Cache is empty",
-            onClick = { if (cacheSize > 0) onClearCache() },
-            tintColor = if (cacheSize > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsClickRow(
-            icon = Icons.Default.DeleteForever,
-            title = "Clear Storage",
-            subtitle = "Delete all downloads, cache and metadata",
-            onClick = onClearAll,
-            tintColor = MaterialTheme.colorScheme.error
-        )
     }
 }
 
@@ -769,7 +907,8 @@ private fun AboutSection() {
 // ─── Reusable row components ──────────────────────────────────────────────────
 
 @Composable
-private fun SettingsGroup(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+// Changed from private to internal so AdvancedSettingsScreen in the same module can access it
+internal fun SettingsGroup(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
     Column {
         Row(modifier = Modifier.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))

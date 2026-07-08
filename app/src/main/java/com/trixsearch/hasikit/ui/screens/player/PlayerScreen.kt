@@ -2,8 +2,12 @@ package com.trixsearch.hasikit.ui.screens.player
 
 import android.app.Activity
 import android.app.PictureInPictureParams
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.telephony.TelephonyManager
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
@@ -14,6 +18,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -22,6 +27,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -54,14 +60,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import org.drinkless.tdlib.TdApi
 import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.math.abs
+
+// Player settings DataStore — reads same store as SettingsViewModel
+private val Context.playerSettingsStore by preferencesDataStore(name = "hasikit_settings")
+private val KEY_RESUME_AFTER_CALL = booleanPreferencesKey("resume_after_call")
+private val KEY_PAUSE_ON_HEADPHONE = booleanPreferencesKey("pause_on_headphone_removal")
+private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
 
 private const val TAG = "PLAYER_DEBUG"
 private const val CONTROLS_HIDE_DELAY = 3000L
@@ -76,7 +91,17 @@ enum class VideoFitMode(val label: String, val resizeMode: Int) {
     ZOOM("Zoom", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
     FIXED_WIDTH("16:9", AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH),
     FIXED_HEIGHT("4:3", AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT),
+    STRETCH("Stretch", AspectRatioFrameLayout.RESIZE_MODE_FILL),
 }
+
+private val FIT_CYCLE = listOf(
+    VideoFitMode.FIT,
+    VideoFitMode.FILL,
+    VideoFitMode.STRETCH,
+    VideoFitMode.FIXED_WIDTH,
+    VideoFitMode.FIXED_HEIGHT,
+    VideoFitMode.ZOOM,
+)
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -182,12 +207,13 @@ fun PlayerScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showAudioMenu by remember { mutableStateOf(false) }
     var showSubtitleMenu by remember { mutableStateOf(false) }
-    var showFitMenu by remember { mutableStateOf(false) }
     var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
+    var fitOverlayText by remember { mutableStateOf<String?>(null) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
     var volumeFeedback by remember { mutableStateOf<String?>(null) }
     var brightnessFeedback by remember { mutableStateOf<String?>(null) }
     var speedFeedback by remember { mutableStateOf<String?>(null) }
+    var lockedTapMessage by remember { mutableStateOf<String?>(null) }
     var videoScale by remember { mutableFloatStateOf(1f) }
     var isLandscape by remember { mutableStateOf(true) }
     // Stores speed before long-press 2x so we can restore on release
@@ -214,6 +240,81 @@ fun PlayerScreen(
     }
 
     val controlsScope = rememberCoroutineScope()
+
+    // Read player preferences from DataStore
+    val resumeAfterCall by context.playerSettingsStore.data
+        .map { it[KEY_RESUME_AFTER_CALL] ?: true }
+        .collectAsState(initial = true)
+    val pauseOnHeadphoneRemoval by context.playerSettingsStore.data
+        .map { it[KEY_PAUSE_ON_HEADPHONE] ?: true }
+        .collectAsState(initial = true)
+    val backgroundAudio by context.playerSettingsStore.data
+        .map { it[KEY_BACKGROUND_AUDIO] ?: true }
+        .collectAsState(initial = true)
+
+    // Track whether playback was interrupted by a phone call so we can resume
+    var wasPlayingBeforeCall by remember { mutableStateOf(false) }
+
+    // Added resume playback after phone calls listener
+    DisposableEffect(resumeAfterCall) {
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        val listener = object : android.telephony.PhoneStateListener() {
+            @Suppress("DEPRECATION")
+            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                when (state) {
+                    TelephonyManager.CALL_STATE_RINGING,
+                    TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        if (player.isPlaying.value) {
+                            wasPlayingBeforeCall = true
+                            player.pause()
+                        }
+                    }
+                    TelephonyManager.CALL_STATE_IDLE -> {
+                        if (resumeAfterCall && wasPlayingBeforeCall) {
+                            wasPlayingBeforeCall = false
+                            player.resume()
+                        } else {
+                            wasPlayingBeforeCall = false
+                        }
+                    }
+                }
+            }
+        }
+        @Suppress("DEPRECATION")
+        telephonyManager.listen(listener, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+        onDispose {
+            @Suppress("DEPRECATION")
+            telephonyManager.listen(listener, android.telephony.PhoneStateListener.LISTEN_NONE)
+        }
+    }
+
+    // Added pause on headphone removal listener
+    DisposableEffect(pauseOnHeadphoneRemoval) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && pauseOnHeadphoneRemoval) {
+                    player.pause()
+                }
+            }
+        }
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        context.registerReceiver(receiver, filter)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    // Added screen lock / background audio listener
+    DisposableEffect(backgroundAudio) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_SCREEN_OFF && !backgroundAudio) {
+                    player.pause()
+                }
+            }
+        }
+        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
+        context.registerReceiver(receiver, filter)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     fun applyVolume(pct: Int) {
         val clamped = pct.coerceIn(0, 200)
@@ -334,7 +435,7 @@ fun PlayerScreen(
                     }
             )
 
-            // RIGHT ZONE — volume swipe + double-tap +10s + long-press 2x speed
+            // RIGHT ZONE — volume swipe + double-tap +10s + single-finger long-press 2x speed
             Box(
                 modifier = Modifier
                     .fillMaxHeight().fillMaxWidth(0.3f).align(Alignment.CenterEnd)
@@ -351,11 +452,17 @@ fun PlayerScreen(
                                 player.seekTo((player.getCurrentPosition() + SEEK_INCREMENT_MS).coerceAtLeast(0L))
                                 seekFeedback = "⏩ +10s"
                                 controlsScope.launch { delay(800); seekFeedback = null }
+                            },
+                            onLongPress = {
+                                // Single-finger long press — activate 2x immediately
+                                prevSpeedRef.floatValue = playbackSpeed
+                                player.setSpeed(2f)
+                                speedFeedback = "⚡ 2x"
                             }
                         )
                     }
+                    // Release detection: use awaitPointerEventScope to restore speed on finger lift
                     .pointerInput(Unit) {
-                        // Long-press 2x: detect hold ≥500ms, restore on release
                         awaitPointerEventScope {
                             while (true) {
                                 awaitFirstDown(requireUnconsumed = false)
@@ -365,12 +472,12 @@ fun PlayerScreen(
                                     val event = awaitPointerEvent()
                                     if (!longPressed && System.currentTimeMillis() - downTime >= LONG_PRESS_THRESHOLD_MS) {
                                         longPressed = true
-                                        prevSpeedRef.floatValue = playbackSpeed
-                                        player.setSpeed(2f)
-                                        speedFeedback = "⚡ 2x"
                                     }
                                     if (event.changes.all { !it.pressed }) {
-                                        if (longPressed) { player.setSpeed(prevSpeedRef.floatValue); speedFeedback = null }
+                                        if (longPressed && speedFeedback != null) {
+                                            player.setSpeed(prevSpeedRef.floatValue)
+                                            speedFeedback = null
+                                        }
                                         break
                                     }
                                 }
@@ -379,14 +486,30 @@ fun PlayerScreen(
                     }
             )
         } else {
-            Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { showControls = !showControls }) })
+            // LOCKED — full screen tap shows "Unlock player first" message
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = {
+                            lockedTapMessage = "Unlock player first"
+                            controlsScope.launch { delay(1500); lockedTapMessage = null }
+                            showControls = true
+                        })
+                    }
+            )
         }
 
         // Feedback overlays
         seekFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center)) }
         speedFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp)) }
-        volumeFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp)) }
-        brightnessFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterStart).padding(start = 40.dp)) }
+        // Volume gesture is on right side — display indicator on LEFT so finger doesn't cover it
+        volumeFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterStart).padding(start = 40.dp)) }
+        // Brightness gesture is on left side — display indicator on RIGHT so finger doesn't cover it
+        brightnessFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp)) }
+        // Aspect ratio label shown slightly above center to avoid overlapping play/pause icon
+        fitOverlayText?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
+        lockedTapMessage?.let { FeedbackPill(it, Modifier.align(Alignment.Center)) }
 
         if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 3.dp)
 
@@ -403,72 +526,75 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))) {
-                // Top bar
-                Row(
-                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                    Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
-                    // Fit mode
-                    Box {
-                        IconButton(onClick = { showFitMenu = true }) { Icon(Icons.Default.AspectRatio, "Fit", tint = Color.White) }
-                        DropdownMenu(expanded = showFitMenu, onDismissRequest = { showFitMenu = false }) {
-                            VideoFitMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode.label, fontWeight = if (fitMode == mode) FontWeight.Bold else FontWeight.Normal) },
-                                    onClick = { fitMode = mode; showFitMenu = false }
-                                )
-                            }
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (isLocked) 0.2f else 0.45f))) {
+                if (!isLocked) {
+                    // Top bar — hidden when locked
+                    Row(
+                        modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+                        Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                        // Aspect ratio — single tap cycles
+                        IconButton(onClick = {
+                            val idx = FIT_CYCLE.indexOf(fitMode)
+                            fitMode = FIT_CYCLE[(idx + 1) % FIT_CYCLE.size]
+                            fitOverlayText = fitMode.label
+                            controlsScope.launch { delay(2000); fitOverlayText = null }
+                        }) { Icon(Icons.Default.AspectRatio, "Aspect Ratio", tint = Color.White) }
+                        TextButton(onClick = { showSpeedSheet = true }) {
+                            Text("${playbackSpeed}x", color = Color.White, fontSize = 13.sp)
                         }
-                    }
-                    // Speed button → bottom sheet
-                    TextButton(onClick = { showSpeedSheet = true }) {
-                        Text("${playbackSpeed}x", color = Color.White, fontSize = 13.sp)
-                    }
-                    // Audio tracks
-                    if (audioTracks.size > 1) {
+                        // Audio track selector — always shown; includes Original Audio and Mute options
                         Box {
                             IconButton(onClick = { showAudioMenu = true }) { Icon(Icons.Default.Audiotrack, "Audio", tint = Color.White) }
                             DropdownMenu(expanded = showAudioMenu, onDismissRequest = { showAudioMenu = false }) {
-                                audioTracks.forEach { track ->
+                                if (audioTracks.isEmpty()) {
+                                    // Single track video — show Original Audio and Mute
+                                    DropdownMenuItem(
+                                        text = { Text("Original Audio", fontWeight = FontWeight.Bold) },
+                                        onClick = { player.setVolume(100); showAudioMenu = false }
+                                    )
+                                } else {
+                                    audioTracks.forEach { track ->
+                                        DropdownMenuItem(
+                                            text = { Text(track.label, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                            onClick = { player.selectAudioTrack(track.groupIndex); showAudioMenu = false }
+                                        )
+                                    }
+                                }
+                                // Mute Audio option always available
+                                DropdownMenuItem(
+                                    text = { Text("Mute Audio") },
+                                    leadingIcon = { Icon(Icons.Default.VolumeOff, null, modifier = Modifier.size(18.dp)) },
+                                    onClick = { player.setVolume(0); showAudioMenu = false }
+                                )
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showSubtitleMenu = true }) { Icon(Icons.Default.ClosedCaption, "Subtitles", tint = Color.White) }
+                            DropdownMenu(expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
+                                DropdownMenuItem(text = { Text("Off") }, onClick = { player.selectSubtitleTrack(null); showSubtitleMenu = false })
+                                subtitleTracks.forEach { track ->
                                     DropdownMenuItem(
                                         text = { Text(track.label, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal) },
-                                        onClick = { player.selectAudioTrack(track.groupIndex); showAudioMenu = false }
+                                        onClick = { player.selectSubtitleTrack(track.groupIndex); showSubtitleMenu = false }
                                     )
                                 }
                             }
                         }
-                    }
-                    // Subtitles
-                    Box {
-                        IconButton(onClick = { showSubtitleMenu = true }) { Icon(Icons.Default.ClosedCaption, "Subtitles", tint = Color.White) }
-                        DropdownMenu(expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
-                            DropdownMenuItem(text = { Text("Off") }, onClick = { player.selectSubtitleTrack(null); showSubtitleMenu = false })
-                            subtitleTracks.forEach { track ->
-                                DropdownMenuItem(
-                                    text = { Text(track.label, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal) },
-                                    onClick = { player.selectSubtitleTrack(track.groupIndex); showSubtitleMenu = false }
-                                )
+                        IconButton(onClick = {
+                            isLandscape = !isLandscape
+                            activity?.requestedOrientation = if (isLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                        }) { Icon(Icons.Default.ScreenRotation, "Rotate", tint = Color.White) }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            IconButton(onClick = { activity?.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }) {
+                                Icon(Icons.Default.PictureInPicture, "PiP", tint = Color.White)
                             }
                         }
                     }
-                    // Rotation
-                    IconButton(onClick = {
-                        isLandscape = !isLandscape
-                        activity?.requestedOrientation = if (isLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    }) { Icon(Icons.Default.ScreenRotation, "Rotate", tint = Color.White) }
-                    // PiP
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        IconButton(onClick = { activity?.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }) {
-                            Icon(Icons.Default.PictureInPicture, "PiP", tint = Color.White)
-                        }
-                    }
-                }
 
-                // Center controls
-                if (!isLocked) {
+                    // Center controls
                     Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         IconButton(onClick = { player.seekTo(currentPosition - SEEK_INCREMENT_MS) }) { Icon(Icons.Default.Replay10, "Rewind", tint = Color.White, modifier = Modifier.size(44.dp)) }
                         IconButton(onClick = { if (isPlaying) player.pause() else player.resume() }, modifier = Modifier.size(64.dp)) {
@@ -476,46 +602,66 @@ fun PlayerScreen(
                         }
                         IconButton(onClick = { player.seekTo(currentPosition + SEEK_INCREMENT_MS) }) { Icon(Icons.Default.Forward10, "Forward", tint = Color.White, modifier = Modifier.size(44.dp)) }
                     }
-                }
 
-                // Bottom bar
-                Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatTime(currentPosition), color = Color.White, fontSize = 12.sp)
-                        Slider(
-                            value = currentPosition.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
-                            onValueChange = { player.seekTo(it.toLong()) },
-                            valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                            colors = SliderDefaults.colors(thumbColor = Color.Red, activeTrackColor = Color.Red, inactiveTrackColor = Color.Gray)
-                        )
-                        Text(formatTime(duration), color = Color.White, fontSize = 12.sp)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { player.cycleRepeatMode() }) {
-                            Icon(
-                                if (repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                                "Repeat",
-                                tint = if (repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) Color.Red else Color.White,
-                                modifier = Modifier.size(20.dp)
+                    // Bottom bar
+                    Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatTime(currentPosition), color = Color.White, fontSize = 12.sp)
+                            Slider(
+                                value = currentPosition.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
+                                onValueChange = { player.seekTo(it.toLong()) },
+                                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                // Thickness of Seekbar
+                                colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary, inactiveTrackColor = Color.Gray),
+                                thumb = {
+                                    // Thickness of Seekbar
+                                    Box(modifier = Modifier.size(12.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape))
+                                },
+                                track = { sliderState ->
+                                    // Thickness of Seekbar
+                                    SliderDefaults.Track(
+                                        sliderState = sliderState,
+                                        modifier = Modifier.height(3.dp),
+                                        colors = SliderDefaults.colors(activeTrackColor = MaterialTheme.colorScheme.primary, inactiveTrackColor = Color.Gray)
+                                    )
+                                }
                             )
+                            Text(formatTime(duration), color = Color.White, fontSize = 12.sp)
                         }
-                        if (abs(videoScale - 1f) > 0.05f) {
-                            TextButton(onClick = { videoScale = 1f }) { Text("Reset Zoom", color = Color.White, fontSize = 11.sp) }
-                        }
-                        IconButton(onClick = { isLocked = !isLocked }) {
-                            Icon(if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen, "Lock", tint = if (isLocked) Color.Yellow else Color.White, modifier = Modifier.size(20.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { player.cycleRepeatMode() }) {
+                                Icon(
+                                    if (repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                    "Repeat",
+                                    tint = if (repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (abs(videoScale - 1f) > 0.05f) {
+                                TextButton(onClick = { videoScale = 1f }) { Text("Reset Zoom", color = Color.White, fontSize = 11.sp) }
+                            }
+                            // Lock button — tap to lock
+                            IconButton(onClick = { isLocked = true; showControls = false }) {
+                                Icon(Icons.Default.LockOpen, "Lock", tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }
 
+                // Unlock button — only shown when locked
                 if (isLocked) {
-                    Box(modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp)).padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Lock, null, tint = Color.Yellow, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Controls Locked", color = Color.White)
-                        }
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .clickable { isLocked = false; resetControlsTimer() }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Lock, null, tint = Color.Yellow, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Unlock", color = Color.White, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

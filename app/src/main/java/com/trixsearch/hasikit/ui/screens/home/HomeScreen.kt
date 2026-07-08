@@ -1,5 +1,6 @@
 package com.trixsearch.hasikit.ui.screens.home
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -28,9 +30,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.SubcomposeAsyncImage
+import com.trixsearch.hasikit.domain.model.DownloadState
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.ui.navigation.Screen
+import com.trixsearch.hasikit.ui.theme.HasikitTheme
 
 @Composable
 private fun LazyListState.OnNearBottom(buffer: Int = 5, onNearBottom: () -> Unit) {
@@ -58,6 +62,8 @@ fun HomeScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val error by viewModel.error.collectAsState()
     val noAccessMessage by viewModel.noAccessMessage.collectAsState()
+    val availableSources by viewModel.availableSources.collectAsState()
+    val selectedSourceFilter by viewModel.selectedSourceFilter.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     listState.OnNearBottom { viewModel.loadMore() }
@@ -111,6 +117,29 @@ fun HomeScreen(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                     )
                 )
+                // Channel filter chips — only shown when multiple sources are available
+                if (availableSources.size > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedSourceFilter == null,
+                            onClick = { viewModel.setSourceFilter(null) },
+                            label = { Text("All Sources", style = MaterialTheme.typography.labelMedium) }
+                        )
+                        availableSources.forEach { source ->
+                            FilterChip(
+                                selected = selectedSourceFilter == source.displayName,
+                                onClick = { viewModel.setSourceFilter(source.displayName) },
+                                label = { Text(source.displayName, style = MaterialTheme.typography.labelMedium) }
+                            )
+                        }
+                    }
+                }
             }
         }
     ) { padding ->
@@ -183,13 +212,16 @@ fun HomeScreen(
                         }
                     } else {
                         items(filteredVideos, key = { "search_${it.id}" }) { video ->
+                            // Pass download state and controls to search result cards
+                            val dlTask = viewModel.downloadTasks.collectAsState().value[video.id]
                             HorizontalVideoCard(
                                 video = video,
                                 onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
-                                onDownloadClick = {
-                                    if (video.isDownloaded) viewModel.deleteDownload(video.id)
-                                    else viewModel.startDownload(video)
-                                }
+                                onDownloadClick = { if (!video.isDownloaded) viewModel.startDownload(video) },
+                                onPauseDownload = { viewModel.pauseDownload(video.id) },
+                                onResumeDownload = { viewModel.resumeDownload(video.id) },
+                                onDeleteDownload = { viewModel.deleteDownload(video.id) },
+                                downloadState = dlTask?.state
                             )
                         }
                     }
@@ -235,13 +267,16 @@ fun HomeScreen(
                 // All Videos
                 item { SectionHeader("All Videos") }
                 items(videos, key = { "all_${it.id}" }) { video ->
+                    // Pass download state and controls to all-videos cards
+                    val dlTask = viewModel.downloadTasks.collectAsState().value[video.id]
                     HorizontalVideoCard(
                         video = video,
                         onClick = { navController.navigate(Screen.Player.createRoute(video.id)) },
-                        onDownloadClick = {
-                            if (video.isDownloaded) viewModel.deleteDownload(video.id)
-                            else viewModel.startDownload(video)
-                        }
+                        onDownloadClick = { if (!video.isDownloaded) viewModel.startDownload(video) },
+                        onPauseDownload = { viewModel.pauseDownload(video.id) },
+                        onResumeDownload = { viewModel.resumeDownload(video.id) },
+                        onDeleteDownload = { viewModel.deleteDownload(video.id) },
+                        downloadState = dlTask?.state
                     )
                 }
 
@@ -311,8 +346,21 @@ fun DownloadedCard(video: Video, onClick: () -> Unit) {
     }
 }
 
+// Updated HorizontalVideoCard to show actual download state and expose pause/resume/delete actions
 @Composable
-fun HorizontalVideoCard(video: Video, onClick: () -> Unit, onDownloadClick: () -> Unit) {
+fun HorizontalVideoCard(
+    video: Video,
+    onClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    // Added download control callbacks for home screen actions
+    onPauseDownload: (() -> Unit)? = null,
+    onResumeDownload: (() -> Unit)? = null,
+    onDeleteDownload: (() -> Unit)? = null,
+    // Current download state for showing correct label/actions
+    downloadState: DownloadState? = null
+) {
+    var showDownloadMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
@@ -332,20 +380,79 @@ fun HorizontalVideoCard(video: Video, onClick: () -> Unit, onDownloadClick: () -
                     if (video.duration > 0L) Text(formatTime(video.duration), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (video.size > 0L) Text(formatBytes(video.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (video.downloadProgress > 0f && video.downloadProgress < 1f) {
-                    LinearProgressIndicator(progress = { video.downloadProgress }, modifier = Modifier.fillMaxWidth().height(2.dp))
+                // Show download state label and progress bar
+                when (downloadState) {
+                    DownloadState.DOWNLOADING -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            LinearProgressIndicator(progress = { video.downloadProgress }, modifier = Modifier.weight(1f).height(2.dp))
+                            Text("${(video.downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp)
+                        }
+                    }
+                    DownloadState.PAUSED -> {
+                        Text("Paused", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DownloadState.COMPLETED -> {
+                        Text("Downloaded", style = MaterialTheme.typography.labelSmall, color = Color(0xFF1DB954))
+                    }
+                    DownloadState.FAILED -> {
+                        Text("Failed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    else -> {
+                        if (video.downloadProgress > 0f && video.downloadProgress < 1f) {
+                            LinearProgressIndicator(progress = { video.downloadProgress }, modifier = Modifier.fillMaxWidth().height(2.dp))
+                        }
+                    }
                 }
             }
-            IconButton(onClick = onDownloadClick, modifier = Modifier.align(Alignment.CenterVertically)) {
-                Icon(
-                    when {
-                        video.isDownloaded -> Icons.Default.DownloadDone
-                        video.downloadProgress > 0f -> Icons.Default.Downloading
-                        else -> Icons.Default.Download
-                    },
-                    "Download",
-                    tint = if (video.isDownloaded) Color(0xFF1DB954) else MaterialTheme.colorScheme.onSurface
-                )
+            // Download action button — shows menu when download is active/paused/completed
+            Box(modifier = Modifier.align(Alignment.CenterVertically)) {
+                IconButton(onClick = {
+                    when (downloadState) {
+                        DownloadState.DOWNLOADING, DownloadState.PAUSED, DownloadState.COMPLETED -> showDownloadMenu = true
+                        else -> onDownloadClick()
+                    }
+                }) {
+                    Icon(
+                        when (downloadState) {
+                            DownloadState.COMPLETED -> Icons.Default.DownloadDone
+                            DownloadState.DOWNLOADING -> Icons.Default.Downloading
+                            DownloadState.PAUSED -> Icons.Default.PauseCircle
+                            DownloadState.FAILED -> Icons.Default.ErrorOutline
+                            else -> if (video.isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download
+                        },
+                        "Download",
+                        tint = when (downloadState) {
+                            DownloadState.COMPLETED -> Color(0xFF1DB954)
+                            DownloadState.FAILED -> MaterialTheme.colorScheme.error
+                            else -> if (video.isDownloaded) Color(0xFF1DB954) else MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                }
+                // Download control dropdown menu — pause, resume, delete
+                DropdownMenu(expanded = showDownloadMenu, onDismissRequest = { showDownloadMenu = false }) {
+                    when (downloadState) {
+                        DownloadState.DOWNLOADING -> {
+                            DropdownMenuItem(
+                                text = { Text("Pause") },
+                                leadingIcon = { Icon(Icons.Default.Pause, null, modifier = Modifier.size(18.dp)) },
+                                onClick = { onPauseDownload?.invoke(); showDownloadMenu = false }
+                            )
+                        }
+                        DownloadState.PAUSED -> {
+                            DropdownMenuItem(
+                                text = { Text("Resume") },
+                                leadingIcon = { Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp)) },
+                                onClick = { onResumeDownload?.invoke(); showDownloadMenu = false }
+                            )
+                        }
+                        else -> {}
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
+                        onClick = { onDeleteDownload?.invoke(); showDownloadMenu = false }
+                    )
+                }
             }
         }
     }
@@ -395,4 +502,134 @@ private fun formatTime(ms: Long): String {
     val seconds = totalSeconds % 60
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
     else "%02d:%02d".format(minutes, seconds)
+}
+
+// ─── Preview Helpers ────────────────────────────────────────────────────────
+
+private fun previewVideo(
+    id: String = "1",
+    title: String = "Sample Movie 1080p BluRay",
+    isDownloaded: Boolean = false,
+    downloadProgress: Float = 0f,
+    sourceLabel: String = "Hasikit"
+) = Video(
+    id = id,
+    title = title,
+    thumbnail = null,
+    videoUrl = "",
+    duration = 5_820_000L,
+    size = 1_572_864_000L,
+    isDownloaded = isDownloaded,
+    downloadProgress = downloadProgress,
+    sourceLabel = sourceLabel
+)
+
+private fun previewProgress(videoId: String = "1", pct: Float = 0.4f) = WatchProgress(
+    videoId = videoId,
+    lastPosition = (5_820_000L * pct).toLong(),
+    duration = 5_820_000L,
+    lastWatchedAt = System.currentTimeMillis()
+)
+
+// ─── Card Previews ───────────────────────────────────────────────────────────
+
+@Preview(name = "HorizontalVideoCard", showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewHorizontalVideoCard() {
+    HasikitTheme {
+        Column {
+            HorizontalVideoCard(video = previewVideo(), onClick = {}, onDownloadClick = {})
+            HorizontalVideoCard(video = previewVideo(id = "2", title = "Another Great Film", isDownloaded = true), onClick = {}, onDownloadClick = {})
+            HorizontalVideoCard(video = previewVideo(id = "3", title = "Downloading Now…", downloadProgress = 0.6f), onClick = {}, onDownloadClick = {})
+        }
+    }
+}
+
+@Preview(name = "ContinueWatchingCard", showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewContinueWatchingCard() {
+    HasikitTheme {
+        LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(listOf(
+                previewVideo(id = "1", title = "Inception") to previewProgress("1", 0.3f),
+                previewVideo(id = "2", title = "Interstellar") to previewProgress("2", 0.75f)
+            )) { (video, progress) ->
+                ContinueWatchingCard(video, progress, onClick = {})
+            }
+        }
+    }
+}
+
+@Preview(name = "RecentCard", showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewRecentCard() {
+    HasikitTheme {
+        LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(listOf(
+                previewVideo(id = "1", title = "The Dark Knight"),
+                previewVideo(id = "2", title = "Avengers: Endgame")
+            )) { video ->
+                RecentCard(video, onClick = {})
+            }
+        }
+    }
+}
+
+@Preview(name = "DownloadedCard", showBackground = true, backgroundColor = 0xFF121212)
+@Composable
+private fun PreviewDownloadedCard() {
+    HasikitTheme {
+        LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(listOf(
+                previewVideo(id = "1", title = "Saved Movie", isDownloaded = true),
+                previewVideo(id = "2", title = "Offline Film", isDownloaded = true)
+            )) { video ->
+                DownloadedCard(video, onClick = {})
+            }
+        }
+    }
+}
+
+// ─── Full Home Content Preview ───────────────────────────────────────────────
+
+@Preview(name = "Home Content – Dark", showBackground = true, backgroundColor = 0xFF000000, widthDp = 400, heightDp = 800)
+@Composable
+private fun PreviewHomeContent() {
+    HasikitTheme {
+        val sampleVideos = (1..6).map {
+            previewVideo(id = "$it", title = "Movie Title $it", sourceLabel = "Channel $it",
+                isDownloaded = it % 3 == 0, downloadProgress = if (it % 4 == 0) 0.5f else 0f)
+        }
+        val continueWatching = sampleVideos.take(2).map { it to previewProgress(it.id) }
+        val recentlyAdded = sampleVideos.take(4)
+        val downloadedVideos = sampleVideos.filter { it.isDownloaded }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item { SectionHeader("Continue Watching") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(continueWatching) { (video, progress) -> ContinueWatchingCard(video, progress, onClick = {}) }
+                }
+            }
+            item { SectionHeader("Recently Added") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(recentlyAdded) { video -> RecentCard(video, onClick = {}) }
+                }
+            }
+            item { SectionHeader("Downloads") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(downloadedVideos) { video -> DownloadedCard(video, onClick = {}) }
+                }
+            }
+            item { SectionHeader("All Videos") }
+            items(sampleVideos) { video ->
+                HorizontalVideoCard(video = video, onClick = {}, onDownloadClick = {})
+            }
+        }
+    }
 }

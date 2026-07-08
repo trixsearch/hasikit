@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.download
 
 import android.content.Context
+import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import com.trixsearch.hasikit.domain.model.DownloadState
@@ -40,12 +41,15 @@ class HasikitDownloadManager @Inject constructor(
 
     private val activeMonitors = mutableSetOf<String>()
     private val monitorMutex = Mutex()
+    // Tracks which videoIds are intentionally paused — prevents auto-resume
+    private val pausedIds = mutableSetOf<String>()
 
     init {
         scope.launch {
             repository.getAllDownloads().collect { tasks ->
                 _downloadTasks.value = tasks.associateBy { it.videoId }
                 tasks.forEach { task ->
+                    // Only auto-resume DOWNLOADING state, never PAUSED
                     if (task.state == DownloadState.DOWNLOADING) {
                         startMonitorIfNeeded(task.videoId)
                     }
@@ -83,12 +87,50 @@ class HasikitDownloadManager @Inject constructor(
         scope.launch { monitorDownload(videoId) }
     }
 
+    fun pauseDownload(videoId: String) {
+        scope.launch {
+            val task = repository.getDownload(videoId) ?: return@launch
+            if (task.state != DownloadState.DOWNLOADING) return@launch
+            Log.d(TAG, "pauseDownload videoId=$videoId")
+            // Mark paused BEFORE cancelling TDLib so monitor loop exits cleanly
+            pausedIds.add(videoId)
+            repository.saveDownload(task.copy(state = DownloadState.PAUSED))
+            val video = repository.getVideoById(videoId)
+            video?.telegramFileId?.toLongOrNull()?.let { fileId ->
+                telegramClientService.send(TdApi.CancelDownloadFile(fileId.toInt(), false)) {}
+            }
+        }
+    }
+
+    fun resumeDownload(video: Video) {
+        scope.launch {
+            val task = repository.getDownload(video.id) ?: return@launch
+            if (task.state != DownloadState.PAUSED) return@launch
+            Log.d(TAG, "resumeDownload videoId=${video.id}")
+            pausedIds.remove(video.id)
+            repository.saveDownload(task.copy(state = DownloadState.DOWNLOADING))
+            startMonitorIfNeeded(video.id)
+            val fileId = video.telegramFileId.toLongOrNull() ?: return@launch
+            telegramClientService.send(TdApi.DownloadFile(fileId.toInt(), 1, 0, 0, false)) { result ->
+                when (result) {
+                    is TdApi.File  -> Log.d(TAG, "resumeDownload DownloadFile started fileId=$fileId")
+                    is TdApi.Error -> Log.e(TAG, "resumeDownload error ${result.code}: ${result.message}")
+                }
+            }
+        }
+    }
+
     private suspend fun monitorDownload(videoId: String) {
         try {
             var running = true
             while (running) {
                 val task = repository.getDownload(videoId)
                 if (task == null || task.state == DownloadState.COMPLETED || task.state == DownloadState.FAILED) {
+                    running = false
+                    continue
+                }
+                // Stop monitoring if paused — do NOT mark as failed
+                if (task.state == DownloadState.PAUSED || pausedIds.contains(videoId)) {
                     running = false
                     continue
                 }
@@ -104,7 +146,6 @@ class HasikitDownloadManager @Inject constructor(
                     continue
                 }
                 val local = file.local
-                val remote = file.remote
                 val progress = if (file.size > 0) local.downloadedSize.toFloat() / file.size else 0f
 
                 if (local.isDownloadingCompleted) {
@@ -113,10 +154,15 @@ class HasikitDownloadManager @Inject constructor(
                     repository.saveDownload(task.copy(state = DownloadState.COMPLETED, progress = 1f, localPath = destPath))
                     repository.updateVideo(video.copy(isDownloaded = true, localPath = destPath, downloadProgress = 1f))
                     running = false
-                } else if (!local.isDownloadingActive && !remote.isUploadingActive) {
-                    Log.w(TAG, "Download stalled videoId=$videoId — marking FAILED")
-                    repository.saveDownload(task.copy(state = DownloadState.FAILED))
-                    running = false
+                } else if (!local.isDownloadingActive) {
+                    // Not active and not paused intentionally — check if we just paused
+                    if (pausedIds.contains(videoId)) {
+                        running = false
+                    } else {
+                        Log.w(TAG, "Download stalled videoId=$videoId — marking FAILED")
+                        repository.saveDownload(task.copy(state = DownloadState.FAILED))
+                        running = false
+                    }
                 } else {
                     if (progress != task.progress) {
                         repository.saveDownload(task.copy(progress = progress))
@@ -139,18 +185,36 @@ class HasikitDownloadManager @Inject constructor(
             cont.invokeOnCancellation {}
         }
 
+    /** Updated by SettingsViewModel when user picks a custom folder */
+    val customDownloadPath = MutableStateFlow("")
+
     private fun copyToMoviesDir(sourcePath: String, title: String, videoId: String): String {
         val src = File(sourcePath)
         if (!src.exists()) return sourcePath
         val ext = sourcePath.substringAfterLast('.', "mp4")
-        // videoId may be "channelId_messageId" — sanitise for filename
         val safeId = videoId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(30)
         val safeTitle = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(60)
-        val destDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+        val customUriStr = customDownloadPath.value
+        val destDir: File = if (customUriStr.isNotBlank()) {
+            try {
+                val uri = Uri.parse(customUriStr)
+                val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                if (docFile?.canWrite() == true) {
+                    // Use app-specific Movies dir as fallback since SAF write needs streams
+                    context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+                } else {
+                    context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+                }
+            } catch (e: Exception) {
+                context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+            }
+        } else {
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+        }
         val dest = File(destDir, "${safeTitle}_${safeId}.$ext")
         return try {
             src.copyTo(dest, overwrite = true)
-            Log.d(TAG, "Copied to Movies: ${dest.absolutePath}")
+            Log.d(TAG, "Copied to: ${dest.absolutePath}")
             dest.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "Copy failed, using TDLib path: $sourcePath", e)

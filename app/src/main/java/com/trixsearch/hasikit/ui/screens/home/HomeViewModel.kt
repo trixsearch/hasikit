@@ -57,6 +57,20 @@ class HomeViewModel @Inject constructor(
     // Reactive thumbnail cache: fileId -> local file path
     private val _thumbnailCache = MutableStateFlow<Map<Long, String?>>(emptyMap())
 
+    private val _selectedSourceFilter = MutableStateFlow<String?>(null) // null = All Sources
+    val selectedSourceFilter: StateFlow<String?> = _selectedSourceFilter
+
+    val availableSources: StateFlow<List<TelegramSource>> = _sourcePages
+        .map { pages -> pages.map { it.source } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSourceFilter(sourceDisplayName: String?) {
+        _selectedSourceFilter.value = sourceDisplayName
+    }
+
+    // Expose download tasks so HomeScreen can read per-video download state
+    val downloadTasks = downloadManager.downloadTasks
+
     val continueWatching: StateFlow<List<Pair<Video, WatchProgress>>> =
         repository.getAllWatchProgress()
             .map { progressList ->
@@ -67,13 +81,21 @@ class HomeViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val videos: StateFlow<List<Video>> = combine(
-        _sourcePages,
-        repository.getAllVideos(),
-        downloadManager.downloadTasks,
-        _thumbnailCache
-    ) { pages, dbVideos, downloadTasks, thumbCache ->
+        combine(_sourcePages, _thumbnailCache, _selectedSourceFilter) { pages, thumbCache, filter ->
+            Triple(pages, thumbCache, filter)
+        },
+        combine(repository.getAllVideos(), downloadManager.downloadTasks) { dbVideos, tasks ->
+            Pair(dbVideos, tasks)
+        }
+    ) { triple, pair ->
+        val pages = triple.first
+        val thumbCache = triple.second
+        val sourceFilter = triple.third
+        val dbVideos = pair.first
+        val downloadTasks = pair.second
         val dbById = dbVideos.associateBy { it.id }
-        pages.flatMap { page ->
+        val filteredPages = if (sourceFilter == null) pages else pages.filter { it.source.displayName == sourceFilter }
+        filteredPages.flatMap { page ->
             page.media.map { media ->
                 val id = "${media.channelId}_${media.messageId}"
                 val db = dbById[id]
@@ -221,5 +243,18 @@ class HomeViewModel @Inject constructor(
     fun deleteDownload(videoId: String) {
         Log.d(TAG, "deleteDownload videoId=$videoId")
         downloadManager.deleteDownload(videoId)
+    }
+
+    // Added pause download from home screen
+    fun pauseDownload(videoId: String) {
+        Log.d(TAG, "pauseDownload videoId=$videoId")
+        downloadManager.pauseDownload(videoId)
+    }
+
+    // Added resume download from home screen
+    fun resumeDownload(videoId: String) {
+        val video = videos.value.find { it.id == videoId } ?: return
+        Log.d(TAG, "resumeDownload videoId=$videoId")
+        downloadManager.resumeDownload(video)
     }
 }

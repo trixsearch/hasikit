@@ -1,5 +1,6 @@
 package com.trixsearch.hasikit.ui.screens.settings
 
+import android.app.Activity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -46,6 +48,7 @@ fun LanguageScreen(
     viewModel: LanguageViewModel = hiltViewModel()
 ) {
     val selected by viewModel.selectedLanguage.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -77,7 +80,11 @@ fun LanguageScreen(
                             Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         }
                     },
-                    modifier = Modifier.clickable { viewModel.setLanguage(language) }
+                    modifier = Modifier.clickable {
+                        viewModel.setLanguage(language)
+                        // Recreate activity so locale applies immediately
+                        (context as? Activity)?.recreate()
+                    }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }

@@ -8,6 +8,8 @@ Development Workflow
 - Do not provide Android Studio menu instructions.
 - Do not provide VS Code instructions.
 - Focus only on source code changes.
+- Always add comments above modified code changes.
+
 
 Technology Stack
 
@@ -57,6 +59,7 @@ Modification Rules
 - Do not remove existing Room entities.
 - Do not remove existing dependencies.
 - Extend and improve existing code instead.
+- For every code modification, always add a short comment immediately above the changed code explaining the purpose of the change, and preserve all existing functionality unless explicitly instructed otherwise
 
 Build Rules
 

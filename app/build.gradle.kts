@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.androidx.media3.datasource)
 
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Coil
     implementation(libs.coil.compose)

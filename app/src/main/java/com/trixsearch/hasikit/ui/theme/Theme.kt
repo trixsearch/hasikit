@@ -7,29 +7,46 @@ import androidx.compose.ui.graphics.Color
 
 enum class AppTheme { SYSTEM, LIGHT, DARK }
 
+// Amazon Prime Video dark theme
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFFE50914),
-    secondary = Color.White,
-    tertiary = Color.Gray,
-    background = Color.Black,
-    surface = Color(0xFF121212),
+    primary = PrimeBlue,
     onPrimary = Color.White,
-    onSecondary = Color.Black,
+    primaryContainer = PrimeDarkBlue,
+    onPrimaryContainer = PrimeWhite,
+    secondary = PrimeLightBlue,
+    onSecondary = PrimeDarkBg,
+    tertiary = PrimeGray,
     onTertiary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White,
+    background = PrimeDarkBg,
+    onBackground = PrimeWhite,
+    surface = PrimeSurface,
+    onSurface = PrimeWhite,
+    surfaceVariant = PrimeSurface2,
+    onSurfaceVariant = PrimeGray,
+    outline = Color(0xFF3D4F5C),
+    error = Color(0xFFFF6B6B),
+    onError = Color.White,
 )
 
+// Amazon Prime Video light theme
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFFE50914),
-    secondary = Color(0xFF1A1A1A),
-    tertiary = Color.Gray,
-    background = Color(0xFFF5F5F5),
-    surface = Color.White,
+    primary = PrimeDarkBlue,
     onPrimary = Color.White,
+    primaryContainer = Color(0xFFD6F0FB),
+    onPrimaryContainer = PrimeDarkBlue,
+    secondary = PrimeBlue,
     onSecondary = Color.White,
-    onBackground = Color(0xFF1A1A1A),
-    onSurface = Color(0xFF1A1A1A),
+    tertiary = PrimeGray,
+    onTertiary = Color.White,
+    background = Color(0xFFF0F2F2),
+    onBackground = Color(0xFF0F171E),
+    surface = Color.White,
+    onSurface = Color(0xFF0F171E),
+    surfaceVariant = Color(0xFFE8EDF0),
+    onSurfaceVariant = Color(0xFF4A5568),
+    outline = Color(0xFFB0BEC5),
+    error = Color(0xFFD32F2F),
+    onError = Color.White,
 )
 
 @Composable

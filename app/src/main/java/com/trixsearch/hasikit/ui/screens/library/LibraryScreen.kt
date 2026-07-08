@@ -89,6 +89,16 @@ class LibraryViewModel @Inject constructor(
         Log.d(TAG, "retryDownload videoId=${video.id}")
         downloadManager.retryDownload(video)
     }
+
+    fun pauseDownload(videoId: String) {
+        Log.d(TAG, "pauseDownload videoId=$videoId")
+        downloadManager.pauseDownload(videoId)
+    }
+
+    fun resumeDownload(video: Video) {
+        Log.d(TAG, "resumeDownload videoId=${video.id}")
+        downloadManager.resumeDownload(video)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -165,7 +175,11 @@ fun LibraryScreen(
                 if (activeDownloads.isNotEmpty()) {
                     item { SectionLabel("Downloading", Icons.Default.Downloading) }
                     items(activeDownloads, key = { it.video.id + "_active" }) { item ->
-                        ActiveDownloadCard(item = item)
+                        ActiveDownloadCard(
+                            item = item,
+                            onPause = { viewModel.pauseDownload(item.video.id) },
+                            onResume = { viewModel.resumeDownload(item.video) }
+                        )
                     }
                 }
 
@@ -238,7 +252,8 @@ private fun EmptyLibraryState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ActiveDownloadCard(item: LibraryItem) {
+fun ActiveDownloadCard(item: LibraryItem, onPause: () -> Unit, onResume: () -> Unit) {
+    val isPaused = item.task?.state == DownloadState.PAUSED
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -274,14 +289,26 @@ fun ActiveDownloadCard(item: LibraryItem) {
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (isPaused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${(progress * 100).toInt()}% — ${if (item.task?.state == DownloadState.PAUSED) "Paused" else "Downloading…"}",
+                    "${(progress * 100).toInt()}% — ${if (isPaused) "Paused" else "Downloading…"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = { if (isPaused) onResume() else onPause() },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    contentDescription = if (isPaused) "Resume" else "Pause",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }

@@ -1,12 +1,14 @@
 package com.trixsearch.hasikit.util
 
 import android.content.Context
+import android.content.res.Configuration
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,5 +43,18 @@ class LanguageManager @Inject constructor(
 
     suspend fun setLanguage(language: AppLanguage) {
         context.langDataStore.edit { it[KEY_LANGUAGE] = language.code }
+        // Also persist to SharedPreferences for attachBaseContext (pre-Hilt)
+        context.getSharedPreferences("hasikit_lang_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("app_language_code", language.code).apply()
+    }
+
+    /** Apply locale to a Context — call from Activity.attachBaseContext */
+    fun applyLocale(base: Context, language: AppLanguage): Context {
+        if (language == AppLanguage.SYSTEM) return base
+        val locale = Locale(language.code)
+        Locale.setDefault(locale)
+        val config = Configuration(base.resources.configuration)
+        config.setLocale(locale)
+        return base.createConfigurationContext(config)
     }
 }

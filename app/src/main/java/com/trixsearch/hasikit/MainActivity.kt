@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.*
@@ -40,6 +39,7 @@ import com.trixsearch.hasikit.ui.navigation.NavGraph
 import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.theme.AppTheme
 import com.trixsearch.hasikit.ui.theme.HasikitTheme
+import com.trixsearch.hasikit.util.AppLanguage
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -117,7 +117,6 @@ class MainActivity : ComponentActivity() {
                             NavigationBar {
                                 val items = listOf(
                                     Triple(Screen.Home, "Home", Icons.Default.Home),
-                                    Triple(Screen.Search, "Search", Icons.Default.Search),
                                     Triple(Screen.Library, "Library", Icons.Default.VideoLibrary),
                                     Triple(Screen.Settings, "Settings", Icons.Default.Settings)
                                 )
@@ -183,6 +182,23 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         Log.d(TAG, "onDestroy")
     }
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        // Read saved language synchronously before Hilt injection
+        val code = newBase.getSharedPreferences("hasikit_lang_prefs", Context.MODE_PRIVATE)
+            .getString("app_language_code", "system") ?: "system"
+        val language = AppLanguage.fromCode(code)
+        val locale = if (language == AppLanguage.SYSTEM) null
+        else java.util.Locale(language.code)
+        if (locale != null) {
+            java.util.Locale.setDefault(locale)
+            val config = android.content.res.Configuration(newBase.resources.configuration)
+            config.setLocale(locale)
+            super.attachBaseContext(newBase.createConfigurationContext(config))
+        } else {
+            super.attachBaseContext(newBase)
+        }
+    }
 }
 
 @Preview(showBackground = true, showSystemUi = true, name = "Main Screen - Dark")
@@ -192,7 +208,6 @@ private fun MainScreenPreview() {
         var selectedIndex by remember { mutableIntStateOf(0) }
         val items = listOf(
             Triple("Home", Icons.Default.Home, Screen.Home.route),
-            Triple("Search", Icons.Default.Search, Screen.Search.route),
             Triple("Library", Icons.Default.VideoLibrary, Screen.Library.route),
             Triple("Settings", Icons.Default.Settings, Screen.Settings.route)
         )

@@ -19,6 +19,7 @@ import com.trixsearch.hasikit.ui.screens.library.LibraryScreen
 import com.trixsearch.hasikit.ui.screens.player.PlayerScreen
 import com.trixsearch.hasikit.ui.screens.search.SearchScreen
 import com.trixsearch.hasikit.ui.screens.request.RequestContentScreen
+import com.trixsearch.hasikit.ui.screens.settings.AdvancedSettingsScreen
 import com.trixsearch.hasikit.ui.screens.settings.LanguageScreen
 import com.trixsearch.hasikit.ui.screens.settings.SettingsScreen
 
@@ -70,6 +71,10 @@ fun NavGraph(
         }
         composable(Screen.Language.route) {
             LanguageScreen(navController)
+        }
+        // Advanced Settings sub-screen wired into nav graph
+        composable(Screen.AdvancedSettings.route) {
+            AdvancedSettingsScreen(navController)
         }
         composable(
             route = Screen.Player.route,
