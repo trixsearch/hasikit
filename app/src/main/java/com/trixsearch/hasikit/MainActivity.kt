@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -181,5 +182,47 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy")
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "Main Screen - Dark")
+@Composable
+private fun MainScreenPreview() {
+    com.trixsearch.hasikit.ui.theme.HasikitTheme(appTheme = com.trixsearch.hasikit.ui.theme.AppTheme.DARK) {
+        var selectedIndex by remember { mutableIntStateOf(0) }
+        val items = listOf(
+            Triple("Home", Icons.Default.Home, Screen.Home.route),
+            Triple("Search", Icons.Default.Search, Screen.Search.route),
+            Triple("Library", Icons.Default.VideoLibrary, Screen.Library.route),
+            Triple("Settings", Icons.Default.Settings, Screen.Settings.route)
+        )
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            bottomBar = {
+                NavigationBar {
+                    items.forEachIndexed { index, (label, icon, _) ->
+                        NavigationBarItem(
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label) },
+                            selected = selectedIndex == index,
+                            onClick = { selectedIndex = index }
+                        )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
+                Text(
+                    text = items[selectedIndex].first,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
     }
 }
