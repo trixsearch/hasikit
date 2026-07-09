@@ -37,12 +37,13 @@ import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.theme.HasikitTheme
 
 @Composable
-private fun LazyListState.OnNearBottom(buffer: Int = 5, onNearBottom: () -> Unit) {
+private fun LazyListState.OnNearBottom(threshold: Int, onNearBottom: () -> Unit) {
     val shouldLoad = remember {
         derivedStateOf {
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val total = layoutInfo.totalItemsCount
-            total > 0 && lastVisible >= total - buffer
+            // Infinite Scroll Prefetch Threshold — fetch next page when this many items remain
+            total > 0 && lastVisible >= total - threshold
         }
     }
     LaunchedEffect(shouldLoad.value) {
@@ -66,7 +67,8 @@ fun HomeScreen(
     val selectedSourceFilter by viewModel.selectedSourceFilter.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    listState.OnNearBottom { viewModel.loadMore() }
+    // Use ViewModel's prefetch threshold so scroll trigger matches pagination config
+    listState.OnNearBottom(threshold = viewModel.prefetchThreshold) { viewModel.loadMore() }
 
     val filteredVideos = remember(videos, searchQuery) {
         if (searchQuery.isBlank()) videos
@@ -281,11 +283,17 @@ fun HomeScreen(
                     )
                 }
 
-                // Pagination footer
+                // Bottom loader — shown while fetching next page, removed when complete
                 if (isLoadingMore) {
                     item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Loading more videos…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

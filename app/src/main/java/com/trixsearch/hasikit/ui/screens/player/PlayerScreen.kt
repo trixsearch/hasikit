@@ -23,11 +23,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -86,6 +85,14 @@ private const val TAG = "PLAYER_DEBUG"
 private const val CONTROLS_HIDE_DELAY = 3000L
 private const val SEEK_INCREMENT_MS = 10_000L
 private const val LONG_PRESS_THRESHOLD_MS = 500L
+// Horizontal Seek Sensitivity — total ms seeked per full screen width swipe
+private const val SEEK_SWIPE_RANGE_MS = 120_000L
+// Brightness Gesture Sensitivity — percent change per full screen height swipe
+private const val BRIGHTNESS_SWIPE_SENSITIVITY = 100
+// Volume Gesture Sensitivity — percent change per full screen height swipe
+private const val VOLUME_SWIPE_SENSITIVITY = 100
+// Gesture direction lock threshold — px of movement before axis is locked
+private const val GESTURE_LOCK_THRESHOLD_PX = 20f
 
 private val SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
@@ -503,87 +510,101 @@ fun PlayerScreen(
         )
 
         if (!isLocked) {
-            // LEFT ZONE — brightness swipe + double-tap -10s
+            // Unified full-screen gesture handler
+            // Priority: horizontal dominant → seek | left-vertical → brightness | right-vertical → volume
             Box(
                 modifier = Modifier
-                    .fillMaxHeight().fillMaxWidth(0.3f).align(Alignment.CenterStart)
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            applyBrightness(brightnessPct + (-dragAmount / size.height * 100).toInt())
-                            controlsScope.launch { delay(1200); brightnessFeedback = null }
-                        }
-                    }
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { resetControlsTimer() },
-                            onDoubleTap = {
-                                player.seekTo((player.getCurrentPosition() - SEEK_INCREMENT_MS).coerceAtLeast(0L))
-                                seekFeedback = "⏪ -10s"
-                                controlsScope.launch { delay(800); seekFeedback = null }
-                            }
-                        )
-                    }
-            )
+                    .fillMaxSize()
+                    .pointerInput(isLocked) {
+                        // Axis-locked gesture: determine direction on first movement, then commit
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val startX = down.position.x
+                            val startY = down.position.y
+                            var totalX = 0f
+                            var totalY = 0f
+                            var axis: String? = null // "h" = horizontal seek, "vL" = brightness, "vR" = volume
+                            var seekBase = 0L
 
-            // CENTER ZONE — horizontal seek + double-tap play/pause + pinch zoom
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight().fillMaxWidth(0.4f).align(Alignment.Center)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { resetControlsTimer() },
-                            onDoubleTap = { if (isPlaying) player.pause() else player.resume() }
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        var totalDrag = 0f; var seekBase = 0L
-                        detectHorizontalDragGestures(
-                            onDragStart = { totalDrag = 0f; seekBase = player.getCurrentPosition() },
-                            onHorizontalDrag = { _, dragAmount ->
-                                totalDrag += dragAmount
-                                val delta = (totalDrag / size.width * 60_000L).toLong()
-                                seekFeedback = "${if (delta >= 0) "⏩" else "⏪"} ${formatTime((seekBase + delta).coerceIn(0L, duration))}"
-                            },
-                            onDragEnd = {
-                                val delta = (totalDrag / size.width * 60_000L).toLong()
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (!change.pressed) break
+                                val dx = change.position.x - startX
+                                val dy = change.position.y - startY
+                                totalX = dx
+                                totalY = dy
+
+                                // Lock axis once movement exceeds threshold
+                                if (axis == null && (kotlin.math.abs(dx) > GESTURE_LOCK_THRESHOLD_PX || kotlin.math.abs(dy) > GESTURE_LOCK_THRESHOLD_PX)) {
+                                    axis = when {
+                                        // Horizontal dominant → seek
+                                        kotlin.math.abs(dx) >= kotlin.math.abs(dy) -> { seekBase = player.getCurrentPosition(); "h" }
+                                        // Left half of screen → brightness
+                                        startX < size.width / 2f -> "vL"
+                                        // Right half of screen → volume
+                                        else -> "vR"
+                                    }
+                                }
+
+                                when (axis) {
+                                    "h" -> {
+                                        // Horizontal Seek Sensitivity — SEEK_SWIPE_RANGE_MS controls total range
+                                        val delta = (totalX / size.width * SEEK_SWIPE_RANGE_MS).toLong()
+                                        val target = (seekBase + delta).coerceIn(0L, duration)
+                                        seekFeedback = "${if (delta >= 0) "⏩" else "⏪"} ${formatTime(target)}"
+                                    }
+                                    "vL" -> {
+                                        // Brightness Gesture Sensitivity — BRIGHTNESS_SWIPE_SENSITIVITY controls range
+                                        val delta = (-totalY / size.height * BRIGHTNESS_SWIPE_SENSITIVITY).toInt()
+                                        applyBrightness(brightnessPct + delta)
+                                    }
+                                    "vR" -> {
+                                        // Volume Gesture Sensitivity — VOLUME_SWIPE_SENSITIVITY controls range
+                                        val delta = (-totalY / size.height * VOLUME_SWIPE_SENSITIVITY).toInt()
+                                        applyVolume(virtualVolumePct + delta)
+                                    }
+                                }
+                                change.consume()
+                            }
+
+                            // On release: commit seek if horizontal gesture
+                            if (axis == "h") {
+                                val delta = (totalX / size.width * SEEK_SWIPE_RANGE_MS).toLong()
                                 player.seekTo((seekBase + delta).coerceIn(0L, duration))
                                 controlsScope.launch { delay(800); seekFeedback = null }
+                            } else if (axis == "vL") {
+                                controlsScope.launch { delay(1200); brightnessFeedback = null }
+                            } else if (axis == "vR") {
+                                controlsScope.launch { delay(1200); volumeFeedback = null }
                             }
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ -> videoScale = (videoScale * zoom).coerceIn(0.5f, 3f) }
-                    }
-            )
-
-            // RIGHT ZONE — volume swipe + double-tap +10s + single-finger long-press 2x speed
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight().fillMaxWidth(0.3f).align(Alignment.CenterEnd)
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            applyVolume(virtualVolumePct + (-dragAmount / size.height * 100).toInt())
-                            controlsScope.launch { delay(1200); volumeFeedback = null }
                         }
                     }
-                    .pointerInput(Unit) {
+                    .pointerInput(isLocked) {
                         detectTapGestures(
                             onTap = { resetControlsTimer() },
-                            onDoubleTap = {
-                                player.seekTo((player.getCurrentPosition() + SEEK_INCREMENT_MS).coerceAtLeast(0L))
-                                seekFeedback = "⏩ +10s"
+                            onDoubleTap = { tapPos ->
+                                if (tapPos.x < size.width / 2f) {
+                                    player.seekTo((player.getCurrentPosition() - SEEK_INCREMENT_MS).coerceAtLeast(0L))
+                                    seekFeedback = "⏪ -10s"
+                                } else {
+                                    player.seekTo((player.getCurrentPosition() + SEEK_INCREMENT_MS).coerceAtLeast(0L))
+                                    seekFeedback = "⏩ +10s"
+                                }
                                 controlsScope.launch { delay(800); seekFeedback = null }
                             },
-                            onLongPress = {
-                                // Single-finger long press — activate 2x immediately
-                                prevSpeedRef.floatValue = playbackSpeed
-                                player.setSpeed(2f)
-                                speedFeedback = "⚡ 2x"
+                            onLongPress = { tapPos ->
+                                // Long press right side — activate 2x speed
+                                if (tapPos.x >= size.width / 2f) {
+                                    prevSpeedRef.floatValue = playbackSpeed
+                                    player.setSpeed(2f)
+                                    speedFeedback = "⚡ 2x"
+                                }
                             }
                         )
                     }
-                    // Release detection: use awaitPointerEventScope to restore speed on finger lift
-                    .pointerInput(Unit) {
+                    // Release detection for long-press 2x speed restore
+                    .pointerInput(isLocked) {
                         awaitPointerEventScope {
                             while (true) {
                                 awaitFirstDown(requireUnconsumed = false)
@@ -605,6 +626,9 @@ fun PlayerScreen(
                             }
                         }
                     }
+                    .pointerInput(isLocked) {
+                        detectTransformGestures { _, _, zoom, _ -> videoScale = (videoScale * zoom).coerceIn(0.5f, 3f) }
+                    }
             )
         } else {
             // LOCKED — full screen tap shows "Unlock player first" message
@@ -621,16 +645,17 @@ fun PlayerScreen(
             )
         }
 
-        // Feedback overlays
-        seekFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center)) }
-        speedFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp)) }
-        // Volume gesture is on right side — display indicator on LEFT so finger doesn't cover it
-        volumeFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterStart).padding(start = 40.dp)) }
-        // Brightness gesture is on left side — display indicator on RIGHT so finger doesn't cover it
-        brightnessFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp)) }
-        // Aspect ratio label shown slightly above center to avoid overlapping play/pause icon
+        // Overlay Label Position — all feedback pills placed above center controls to avoid overlapping play/pause
+        // Adjust the offset(y = ...) value to move labels higher or lower relative to screen center
+        seekFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
+        speedFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
+        // Volume indicator on left side so finger on right doesn’t cover it
+        volumeFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterStart).padding(start = 40.dp).offset(y = (-80).dp)) }
+        // Brightness indicator on right side so finger on left doesn’t cover it
+        brightnessFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterEnd).padding(end = 40.dp).offset(y = (-80).dp)) }
+        // Aspect ratio label — same above-center position
         fitOverlayText?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
-        lockedTapMessage?.let { FeedbackPill(it, Modifier.align(Alignment.Center)) }
+        lockedTapMessage?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
 
         if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 3.dp)
 

@@ -24,6 +24,8 @@ import javax.inject.Inject
 private const val TAG = "HomeViewModel"
 // Initial fetch size — load minimum 25 videos on first open
 private const val PAGE_SIZE = 25
+// Infinite Scroll Prefetch Threshold — trigger next page fetch when this many items remain unseen
+private const val PREFETCH_THRESHOLD = 10
 
 data class SourcePage(
     val source: TelegramSource,
@@ -202,6 +204,9 @@ class HomeViewModel @Inject constructor(
             }
     }
 
+    // Expose prefetch threshold so HomeScreen can trigger loadMore at the right scroll position
+    val prefetchThreshold: Int get() = PREFETCH_THRESHOLD
+
     fun loadMore() {
         if (_isLoadingMore.value) return
         val pages = _sourcePages.value
@@ -213,6 +218,7 @@ class HomeViewModel @Inject constructor(
                 loadPage(page.source, page.chatId, reset = false) ?: page
             }
             _sourcePages.value = updated
+            // Automatically fetch thumbnails for all newly loaded items — no manual refresh needed
             fetchThumbnails(updated.flatMap { it.media })
             _isLoadingMore.value = false
         }
