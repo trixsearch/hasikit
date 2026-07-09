@@ -10,13 +10,16 @@ import android.content.pm.ActivityInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
-import android.telephony.PhoneStateListener
+import android.telecom.TelecomManager
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.util.Log
 import android.util.Rational
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -34,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -83,6 +87,7 @@ private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
 
 private const val TAG = "PLAYER_DEBUG"
 private const val CONTROLS_HIDE_DELAY = 3000L
+// Double Tap Seek Duration — ms seeked per double-tap on left/right zones
 private const val SEEK_INCREMENT_MS = 10_000L
 private const val LONG_PRESS_THRESHOLD_MS = 500L
 // Horizontal Seek Sensitivity — total ms seeked per full screen width swipe
@@ -93,6 +98,9 @@ private const val BRIGHTNESS_SWIPE_SENSITIVITY = 100
 private const val VOLUME_SWIPE_SENSITIVITY = 100
 // Gesture direction lock threshold — px of movement before axis is locked
 private const val GESTURE_LOCK_THRESHOLD_PX = 20f
+// Double Tap Zone — left 40% = backward, center 20% = play/pause, right 40% = forward
+private const val DOUBLE_TAP_LEFT_ZONE = 0.40f
+private const val DOUBLE_TAP_RIGHT_ZONE = 0.60f
 
 private val SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
@@ -246,6 +254,8 @@ fun PlayerScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showAudioMenu by remember { mutableStateOf(false) }
     var showSubtitleMenu by remember { mutableStateOf(false) }
+    // Local subtitle URI selected by the user via file picker — persisted per session
+    var localSubtitleUri by remember { mutableStateOf<Uri?>(null) }
     var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
     var fitOverlayText by remember { mutableStateOf<String?>(null) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
@@ -257,6 +267,26 @@ fun PlayerScreen(
     var isLandscape by remember { mutableStateOf(true) }
     // Stores speed before long-press 2x so we can restore on release
     val prevSpeedRef = remember { mutableFloatStateOf(1f) }
+    // Horizontal seek preview — shows target timestamp while finger is dragging
+    var seekPreviewTime by remember { mutableLongStateOf(0L) }
+    var showSeekPreview by remember { mutableStateOf(false) }
+
+    // File picker launcher for local subtitle files (.srt .ass .vtt .sub)
+    val subtitlePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            localSubtitleUri = uri
+            // Persist read permission across sessions
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                Log.w(TAG, "takePersistableUriPermission failed: ${e.message}")
+            }
+            player.loadLocalSubtitle(uri.toString())
+            Log.d(TAG, "Local subtitle selected: $uri")
+        }
+    }
 
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxSystemVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
@@ -295,53 +325,42 @@ fun PlayerScreen(
     var wasPlayingBeforeCall by remember { mutableStateOf(false) }
 
     // Audio focus: request focus before playback to prevent crashes with other media apps
+    // minSdk=26 so AudioFocusRequest is always available — no version guard needed
     val audioFocusRequest = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener { focusChange ->
-                    when (focusChange) {
-                        AudioManager.AUDIOFOCUS_LOSS -> player.pause()
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> player.pause()
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player.setVolume(30)
-                        AudioManager.AUDIOFOCUS_GAIN -> {
-                            player.setVolume(100)
-                            player.resume()
-                        }
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { focusChange ->
+                when (focusChange) {
+                    AudioManager.AUDIOFOCUS_LOSS -> player.pause()
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> player.pause()
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player.setVolume(30)
+                    AudioManager.AUDIOFOCUS_GAIN -> {
+                        player.setVolume(100)
+                        player.resume()
                     }
                 }
-                .build()
-        } else null
-    }
-
-    // Request audio focus on enter, abandon on exit
-    DisposableEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
-            audioManager.requestAudioFocus(audioFocusRequest)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
-        }
-        onDispose {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
-                audioManager.abandonAudioFocusRequest(audioFocusRequest)
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(null)
             }
+            .build()
+    }
+
+    // Request audio focus on enter, abandon on exit — minSdk=26 so AudioFocusRequest is always available
+    DisposableEffect(Unit) {
+        if (audioFocusRequest != null) audioManager.requestAudioFocus(audioFocusRequest)
+        onDispose {
+            if (audioFocusRequest != null) audioManager.abandonAudioFocusRequest(audioFocusRequest)
         }
     }
 
-    // Added resume playback after phone calls — uses TelephonyCallback on API 31+, PhoneStateListener below
-    // Wrapped in try-catch: SecurityException thrown if READ_PHONE_STATE permission is denied at runtime
+    // Resume playback after phone calls
+    // API 31+: TelephonyCallback (no permission needed for call state)
+    // API 26–30: TelecomManager.isInCall() polled via audio focus loss — no READ_PHONE_STATE required
     DisposableEffect(resumeAfterCall) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // API 31+: use non-deprecated TelephonyCallback
             val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
             val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
                 override fun onCallStateChanged(state: Int) {
@@ -362,44 +381,38 @@ fun PlayerScreen(
                 telephonyManager.registerTelephonyCallback(context.mainExecutor, callback)
                 true
             } catch (e: SecurityException) {
-                Log.w(TAG, "Cannot register TelephonyCallback — READ_PHONE_STATE not granted: ${e.message}")
+                Log.w(TAG, "TelephonyCallback not registered — READ_PHONE_STATE not granted: ${e.message}")
                 false
             }
             onDispose { if (registered) telephonyManager.unregisterTelephonyCallback(callback) }
         } else {
-            // API < 31: use PhoneStateListener (deprecated but required for older devices)
-            val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-            @Suppress("DEPRECATION")
-            val listener = object : PhoneStateListener() {
-                @Suppress("DEPRECATION")
-                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+            // API 26–30: TelecomManager.isInCall() requires no permission for self-managed calls
+            // Audio focus loss (AUDIOFOCUS_LOSS) already pauses playback during calls via audioFocusRequest.
+            // Here we additionally track call end via TelecomManager to support resumeAfterCall.
+            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(ctx: Context?, intent: Intent?) {
+                    if (intent?.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
+                    val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
                     when (state) {
-                        TelephonyManager.CALL_STATE_RINGING,
-                        TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        TelephonyManager.EXTRA_STATE_RINGING,
+                        TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                             if (player.isPlaying.value) { wasPlayingBeforeCall = true; player.pause() }
                         }
-                        TelephonyManager.CALL_STATE_IDLE -> {
-                            if (resumeAfterCall && wasPlayingBeforeCall) { wasPlayingBeforeCall = false; player.resume() }
-                            else wasPlayingBeforeCall = false
+                        TelephonyManager.EXTRA_STATE_IDLE -> {
+                            // Double-check with TelecomManager — no permission needed
+                            if (!telecomManager.isInCall) {
+                                if (resumeAfterCall && wasPlayingBeforeCall) { wasPlayingBeforeCall = false; player.resume() }
+                                else wasPlayingBeforeCall = false
+                            }
                         }
                     }
                 }
             }
-            // Guard against SecurityException if READ_PHONE_STATE permission is not granted
-            val registered = try {
-                @Suppress("DEPRECATION")
-                telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
-                true
-            } catch (e: SecurityException) {
-                Log.w(TAG, "Cannot register PhoneStateListener — READ_PHONE_STATE not granted: ${e.message}")
-                false
-            }
-            onDispose {
-                if (registered) {
-                    @Suppress("DEPRECATION")
-                    telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE)
-                }
-            }
+            // ACTION_PHONE_STATE_CHANGED broadcast requires no permission to receive on API 26+
+            val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            context.registerReceiver(receiver, filter)
+            onDispose { context.unregisterReceiver(receiver) }
         }
     }
 
@@ -552,6 +565,9 @@ fun PlayerScreen(
                                         // Horizontal Seek Sensitivity — SEEK_SWIPE_RANGE_MS controls total range
                                         val delta = (totalX / size.width * SEEK_SWIPE_RANGE_MS).toLong()
                                         val target = (seekBase + delta).coerceIn(0L, duration)
+                                        // Show seek preview overlay while dragging
+                                        seekPreviewTime = target
+                                        showSeekPreview = true
                                         seekFeedback = "${if (delta >= 0) "⏩" else "⏪"} ${formatTime(target)}"
                                     }
                                     "vL" -> {
@@ -572,6 +588,7 @@ fun PlayerScreen(
                             if (axis == "h") {
                                 val delta = (totalX / size.width * SEEK_SWIPE_RANGE_MS).toLong()
                                 player.seekTo((seekBase + delta).coerceIn(0L, duration))
+                                showSeekPreview = false
                                 controlsScope.launch { delay(800); seekFeedback = null }
                             } else if (axis == "vL") {
                                 controlsScope.launch { delay(1200); brightnessFeedback = null }
@@ -584,14 +601,23 @@ fun PlayerScreen(
                         detectTapGestures(
                             onTap = { resetControlsTimer() },
                             onDoubleTap = { tapPos ->
-                                if (tapPos.x < size.width / 2f) {
-                                    player.seekTo((player.getCurrentPosition() - SEEK_INCREMENT_MS).coerceAtLeast(0L))
-                                    seekFeedback = "⏪ -10s"
-                                } else {
-                                    player.seekTo((player.getCurrentPosition() + SEEK_INCREMENT_MS).coerceAtLeast(0L))
-                                    seekFeedback = "⏩ +10s"
+                                // Double Tap Zone — left 40% = backward, center 20% = play/pause, right 40% = forward
+                                when {
+                                    tapPos.x < size.width * DOUBLE_TAP_LEFT_ZONE -> {
+                                        player.seekTo((player.getCurrentPosition() - SEEK_INCREMENT_MS).coerceAtLeast(0L))
+                                        seekFeedback = "⏪ -10s"
+                                        controlsScope.launch { delay(800); seekFeedback = null }
+                                    }
+                                    tapPos.x > size.width * DOUBLE_TAP_RIGHT_ZONE -> {
+                                        player.seekTo((player.getCurrentPosition() + SEEK_INCREMENT_MS).coerceAtLeast(0L))
+                                        seekFeedback = "⏩ +10s"
+                                        controlsScope.launch { delay(800); seekFeedback = null }
+                                    }
+                                    else -> {
+                                        // Center zone — double tap toggles play/pause
+                                        if (isPlaying) player.pause() else player.resume()
+                                    }
                                 }
-                                controlsScope.launch { delay(800); seekFeedback = null }
                             },
                             onLongPress = { tapPos ->
                                 // Long press right side — activate 2x speed
@@ -648,6 +674,23 @@ fun PlayerScreen(
         // Overlay Label Position — all feedback pills placed above center controls to avoid overlapping play/pause
         // Adjust the offset(y = ...) value to move labels higher or lower relative to screen center
         seekFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
+        // Seek preview overlay — large timestamp shown during horizontal swipe
+        if (showSeekPreview) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-120).dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    text = formatTime(seekPreviewTime),
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
         speedFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
         // Volume indicator on left side so finger on right doesn’t cover it
         volumeFeedback?.let { FeedbackPill(it, Modifier.align(Alignment.CenterStart).padding(start = 40.dp).offset(y = (-80).dp)) }
@@ -712,7 +755,8 @@ fun PlayerScreen(
                                 // Mute Audio option always available
                                 DropdownMenuItem(
                                     text = { Text("Mute Audio") },
-                                    leadingIcon = { Icon(Icons.Default.VolumeOff, null, modifier = Modifier.size(18.dp)) },
+                                    // Replaced deprecated Icons.Default.VolumeOff with AutoMirrored variant
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.VolumeOff, null, modifier = Modifier.size(18.dp)) },
                                     onClick = { player.setVolume(0); showAudioMenu = false }
                                 )
                             }
@@ -720,11 +764,35 @@ fun PlayerScreen(
                         Box {
                             IconButton(onClick = { showSubtitleMenu = true }) { Icon(Icons.Default.ClosedCaption, "Subtitles", tint = Color.White) }
                             DropdownMenu(expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
+                                // Embedded subtitles — off option
                                 DropdownMenuItem(text = { Text("Off") }, onClick = { player.selectSubtitleTrack(null); showSubtitleMenu = false })
+                                // Embedded subtitle tracks from the media file
                                 subtitleTracks.forEach { track ->
                                     DropdownMenuItem(
                                         text = { Text(track.label, fontWeight = if (track.isSelected) FontWeight.Bold else FontWeight.Normal) },
                                         onClick = { player.selectSubtitleTrack(track.groupIndex); showSubtitleMenu = false }
+                                    )
+                                }
+                                // External subtitle — load local file via Android file picker (.srt .ass .vtt .sub)
+                                DropdownMenuItem(
+                                    text = { Text("Load Local Subtitle") },
+                                    leadingIcon = { Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp)) },
+                                    onClick = {
+                                        showSubtitleMenu = false
+                                        subtitlePickerLauncher.launch(arrayOf(
+                                            "application/x-subrip",
+                                            "text/x-ssa",
+                                            "text/vtt",
+                                            "application/octet-stream",
+                                            "text/plain"
+                                        ))
+                                    }
+                                )
+                                // Show currently loaded local subtitle filename if any
+                                if (localSubtitleUri != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("✓ ${localSubtitleUri?.lastPathSegment ?: "subtitle"}", fontWeight = FontWeight.Bold, maxLines = 1) },
+                                        onClick = { showSubtitleMenu = false }
                                     )
                                 }
                             }
@@ -734,7 +802,21 @@ fun PlayerScreen(
                             activity?.requestedOrientation = if (isLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                         }) { Icon(Icons.Default.ScreenRotation, "Rotate", tint = Color.White) }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            IconButton(onClick = { activity?.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }) {
+                            // PiP — use actual video dimensions for correct surface sizing; no empty regions
+                            IconButton(onClick = {
+                                val vw = player.getVideoWidth()
+                                val vh = player.getVideoHeight()
+                                val rational = if (vw > 0 && vh > 0) {
+                                    // Clamp to Android PiP allowed range (min 1:2.39, max 2.39:1)
+                                    val ratio = vw.toFloat() / vh
+                                    val clamped = ratio.coerceIn(1f / 2.39f, 2.39f)
+                                    if (clamped >= 1f) Rational((clamped * 100).toInt(), 100)
+                                    else Rational(100, (100 / clamped).toInt().coerceAtLeast(1))
+                                } else Rational(16, 9)
+                                activity?.enterPictureInPictureMode(
+                                    PictureInPictureParams.Builder().setAspectRatio(rational).build()
+                                )
+                            }) {
                                 Icon(Icons.Default.PictureInPicture, "PiP", tint = Color.White)
                             }
                         }

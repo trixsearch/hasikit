@@ -1,5 +1,7 @@
 package com.trixsearch.hasikit.ui.screens.home
 
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -92,7 +94,7 @@ fun HomeScreen(
                     )
                     .windowInsetsPadding(WindowInsets.statusBars)
                     // Title Top Padding — reduce to tighten header spacing
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .padding(horizontal = 16.dp, vertical = 0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PlayCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
@@ -316,7 +318,8 @@ private fun SectionHeader(title: String) {
 fun RecentCard(video: Video, onClick: () -> Unit) {
     Card(modifier = Modifier.width(160.dp).clickable { onClick() }, shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(3.dp)) {
         Box {
-            VideoThumbnail(url = video.thumbnail, modifier = Modifier.fillMaxWidth().height(95.dp))
+            // Pass localPath for video frame fallback when Telegram thumbnail is absent
+            VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxWidth().height(95.dp))
             Box(modifier = Modifier.fillMaxWidth().height(95.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
             Text(video.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
@@ -328,7 +331,8 @@ fun ContinueWatchingCard(video: Video, progress: WatchProgress, onClick: () -> U
     val percent = if (progress.duration > 0) progress.lastPosition.toFloat() / progress.duration else 0f
     Card(modifier = Modifier.width(190.dp).clickable { onClick() }, shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(4.dp)) {
         Box {
-            VideoThumbnail(url = video.thumbnail, modifier = Modifier.fillMaxWidth().height(108.dp))
+            // Pass localPath for video frame fallback when Telegram thumbnail is absent
+            VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxWidth().height(108.dp))
             Box(modifier = Modifier.fillMaxWidth().height(108.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
             Icon(Icons.Default.PlayCircle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.Center).size(36.dp))
             Text(video.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, end = 6.dp, bottom = 10.dp))
@@ -341,7 +345,8 @@ fun ContinueWatchingCard(video: Video, progress: WatchProgress, onClick: () -> U
 fun DownloadedCard(video: Video, onClick: () -> Unit) {
     Card(modifier = Modifier.width(150.dp).clickable { onClick() }, shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(3.dp)) {
         Box {
-            VideoThumbnail(url = video.thumbnail, modifier = Modifier.fillMaxWidth().height(95.dp))
+            // Pass localPath for video frame fallback when Telegram thumbnail is absent
+            VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxWidth().height(95.dp))
             Box(modifier = Modifier.fillMaxWidth().height(95.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
             Surface(modifier = Modifier.align(Alignment.TopEnd).padding(5.dp), shape = RoundedCornerShape(4.dp), color = Color(0xFF1DB954).copy(alpha = 0.9f)) {
                 Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -377,7 +382,8 @@ fun HorizontalVideoCard(
     ) {
         Row(modifier = Modifier.height(82.dp)) {
             Box(modifier = Modifier.width(136.dp)) {
-                VideoThumbnail(url = video.thumbnail, modifier = Modifier.fillMaxSize())
+                // Pass localPath for video frame fallback when Telegram thumbnail is absent
+                VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxSize())
                 if (video.isDownloaded) {
                     Icon(Icons.Default.DownloadDone, null, tint = Color(0xFF1DB954), modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(16.dp))
                 }
@@ -467,15 +473,33 @@ fun HorizontalVideoCard(
     }
 }
 
+// Thumbnail fallback: try Telegram path first, then generate from local video file
 @Composable
-fun VideoThumbnail(url: String?, modifier: Modifier = Modifier) {
+fun VideoThumbnail(url: String?, localVideoPath: String? = null, modifier: Modifier = Modifier) {
     // TDLib returns raw file paths — prefix with file:// for Coil
-    val model = remember(url) {
+    val model = remember(url, localVideoPath) {
         when {
-            url == null -> null
-            url.startsWith("file://") || url.startsWith("content://") || url.startsWith("http") -> url
-            url.startsWith("/") -> "file://$url"
-            else -> url
+            !url.isNullOrBlank() -> when {
+                url.startsWith("file://") || url.startsWith("content://") || url.startsWith("http") -> url
+                url.startsWith("/") -> "file://$url"
+                else -> url
+            }
+            // No Telegram thumbnail — generate from local video file if available
+            !localVideoPath.isNullOrBlank() -> {
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    val path = if (localVideoPath.startsWith("file://")) localVideoPath.removePrefix("file://") else localVideoPath
+                    retriever.setDataSource(path)
+                    // Extract frame at 10% of duration for a representative thumbnail
+                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val durationMs = durationStr?.toLongOrNull() ?: 0L
+                    val frameTimeUs = (durationMs * 0.1 * 1000).toLong().coerceAtLeast(0L)
+                    retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            else -> null
         }
     }
     SubcomposeAsyncImage(
@@ -489,8 +513,9 @@ fun VideoThumbnail(url: String?, modifier: Modifier = Modifier) {
             }
         },
         error = {
+            // Show placeholder icon — never show a blank black card
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.BrokenImage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                Icon(Icons.Default.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
             }
         }
     )

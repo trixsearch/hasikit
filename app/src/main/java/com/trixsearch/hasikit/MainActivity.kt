@@ -153,9 +153,18 @@ class MainActivity : ComponentActivity() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && player.isPlaying.value) {
             Log.d(TAG, "onUserLeaveHint — entering PiP")
+            // PiP — use actual video dimensions so surface fills the PiP window with no empty regions
+            val vw = player.getVideoWidth()
+            val vh = player.getVideoHeight()
+            val rational = if (vw > 0 && vh > 0) {
+                val ratio = vw.toFloat() / vh
+                val clamped = ratio.coerceIn(1f / 2.39f, 2.39f)
+                if (clamped >= 1f) Rational((clamped * 100).toInt(), 100)
+                else Rational(100, (100 / clamped).toInt().coerceAtLeast(1))
+            } else Rational(16, 9)
             enterPictureInPictureMode(
                 PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
+                    .setAspectRatio(rational)
                     .build()
             )
         }

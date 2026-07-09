@@ -15,6 +15,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.MediaSession
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,14 @@ class HasikitPlayer @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private var exoPlayer: ExoPlayer? = null
+    // MediaSession — exposes playback to lock screen, notification, Bluetooth, Android Auto
+    private var mediaSession: MediaSession? = null
+
+    // Video dimensions — used for correct PiP aspect ratio
+    private val _videoWidth = MutableStateFlow(0)
+    private val _videoHeight = MutableStateFlow(0)
+    fun getVideoWidth(): Int = _videoWidth.value
+    fun getVideoHeight(): Int = _videoHeight.value
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying
@@ -122,6 +131,9 @@ class HasikitPlayer @Inject constructor(
 
                     override fun onVideoSizeChanged(videoSize: VideoSize) {
                         Log.d(TAG, "[VIDEO_SIZE] ${videoSize.width}x${videoSize.height}")
+                        // Track video dimensions for PiP aspect ratio calculation
+                        _videoWidth.value = videoSize.width
+                        _videoHeight.value = videoSize.height
                     }
 
                     override fun onRenderedFirstFrame() {
@@ -147,7 +159,9 @@ class HasikitPlayer @Inject constructor(
                     }
                 })
             }
-        Log.d(TAG, "[INIT] ExoPlayer ready")
+        // MediaSession — connects ExoPlayer to lock screen, notification shade, Bluetooth, Android Auto
+        mediaSession = MediaSession.Builder(context, exoPlayer!!).build()
+        Log.d(TAG, "[INIT] ExoPlayer + MediaSession ready")
     }
 
     private fun extractHttpCode(e: PlaybackException): Int? {
@@ -204,8 +218,16 @@ class HasikitPlayer @Inject constructor(
         val isLocal = url.startsWith("file://")
         Log.d(TAG, "[PLAY] VIDEO_ID=$videoId TITLE=$title SOURCE=${if (isLocal) "LOCAL" else "REMOTE"} URL=$url MIME=${mime ?: "auto"} START=${startPosition}ms")
 
-        val mediaItem = if (mime != null) MediaItem.Builder().setUri(url).setMimeType(mime).build()
-        else MediaItem.fromUri(url)
+        // MediaSession — set title in MediaMetadata so lock screen / notification shows it
+        val mediaItem = MediaItem.Builder()
+            .setUri(url)
+            .apply { if (mime != null) setMimeType(mime) }
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(title)
+                    .build()
+            )
+            .build()
 
         exoPlayer?.apply {
             setMediaItem(mediaItem)
@@ -214,6 +236,25 @@ class HasikitPlayer @Inject constructor(
             play()
             Log.d(TAG, "[PLAY] prepare()+play() called")
         } ?: Log.e(TAG, "[PLAY] ExoPlayer is null")
+    }
+
+    // Load local subtitle file — rebuilds MediaItem with subtitle configuration
+    fun loadLocalSubtitle(subtitleUri: String) {
+        val player = exoPlayer ?: return
+        val currentItem = player.currentMediaItem ?: return
+        Log.d(TAG, "[SUBTITLE] loading local subtitle uri=$subtitleUri")
+        val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(subtitleUri))
+            .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+            .build()
+        val newItem = currentItem.buildUpon()
+            .setSubtitleConfigurations(listOf(subtitleConfig))
+            .build()
+        val pos = player.currentPosition
+        player.setMediaItem(newItem, pos)
+        player.prepare()
+        player.play()
+        Log.d(TAG, "[SUBTITLE] local subtitle applied, resuming from ${pos}ms")
     }
 
     fun pause() { exoPlayer?.pause(); Log.d(TAG, "[PAUSE] pos=${exoPlayer?.currentPosition}ms") }
@@ -303,6 +344,9 @@ class HasikitPlayer @Inject constructor(
 
     fun release() {
         Log.d(TAG, "[RELEASE] pos=${exoPlayer?.currentPosition}ms")
+        // MediaSession — release before ExoPlayer to avoid dangling references
+        mediaSession?.release()
+        mediaSession = null
         exoPlayer?.release()
         exoPlayer = null
         _isPlaying.value = false

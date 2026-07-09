@@ -127,7 +127,7 @@ fun LibraryScreen(
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars)
                     // Title Top Padding — reduce to tighten header spacing
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .padding(horizontal = 16.dp, vertical = 0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

@@ -17,6 +17,7 @@ import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelReposito
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,8 +25,10 @@ import javax.inject.Inject
 private const val TAG = "HomeViewModel"
 // Initial fetch size — load minimum 25 videos on first open
 private const val PAGE_SIZE = 25
-// Infinite Scroll Prefetch Threshold — trigger next page fetch when this many items remain unseen
+// Infinite Scroll Threshold — trigger next page fetch when this many items remain unseen
 private const val PREFETCH_THRESHOLD = 10
+// Auto Refresh Interval — seconds between background checks for new channel content; 0 = disabled
+private const val AUTO_REFRESH_SECONDS = 60L
 
 data class SourcePage(
     val source: TelegramSource,
@@ -134,6 +137,8 @@ class HomeViewModel @Inject constructor(
                 // Only load sources when fully authenticated, not during Loading state
                 if (state is AuthState.Authenticated && _sourcePages.value.isEmpty()) {
                     loadAllSources()
+                    // Auto Refresh Interval — start background polling after initial load
+                    if (AUTO_REFRESH_SECONDS > 0) startAutoRefresh()
                 }
             }
         }
@@ -143,6 +148,38 @@ class HomeViewModel @Inject constructor(
                 if (authRepository.authState.value is AuthState.Authenticated) {
                     loadAllSources()
                 }
+            }
+        }
+    }
+
+    // Auto Refresh Interval — polls for new content at the top without disturbing scroll position
+    private fun startAutoRefresh() {
+        viewModelScope.launch {
+            while (true) {
+                delay(AUTO_REFRESH_SECONDS * 1000L)
+                if (authRepository.authState.value !is AuthState.Authenticated) continue
+                val currentPages = _sourcePages.value
+                if (currentPages.isEmpty()) continue
+                val allSources = buildList {
+                    addAll(sourceConfig.officialSources)
+                    addAll(sourceConfig.userSourcesFlow.first())
+                }
+                // Check each source for new messages (offset 0 = latest)
+                val updatedPages = currentPages.map { existingPage ->
+                    val source = allSources.find { it.displayName == existingPage.source.displayName } ?: return@map existingPage
+                    val freshPage = channelRepository.getChannelMedia(existingPage.chatId, 0L, PAGE_SIZE).getOrNull()
+                        ?: return@map existingPage
+                    // Identify new items not already in the existing list
+                    val existingIds = existingPage.media.map { it.messageId }.toSet()
+                    val newItems = freshPage.filter { it.messageId !in existingIds }
+                    if (newItems.isEmpty()) return@map existingPage
+                    Log.i(TAG, "autoRefresh: ${newItems.size} new items for source=${source.displayName}")
+                    // Insert new items at top, preserve existing scroll content
+                    existingPage.copy(media = newItems + existingPage.media)
+                }
+                _sourcePages.value = updatedPages
+                // Fetch thumbnails for any newly inserted items
+                fetchThumbnails(updatedPages.flatMap { it.media })
             }
         }
     }
