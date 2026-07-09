@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -92,9 +93,10 @@ fun HomeScreen(
                             )
                         )
                     )
+                    // Status Bar Top Padding — windowInsetsPadding handles the status bar height automatically
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    // Title Top Padding — reduce to tighten header spacing
-                    .padding(horizontal = 16.dp, vertical = 0.dp)
+                    // Title Top Padding — set to 4.dp top to keep title close to status bar
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PlayCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
@@ -373,10 +375,19 @@ fun HorizontalVideoCard(
     // Current download state for showing correct label/actions
     downloadState: DownloadState? = null
 ) {
+    val context = LocalContext.current
     var showDownloadMenu by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable { onClick() },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable {
+            // Streamability logic — non-streamable documents must be downloaded before playback
+            if (!video.isStreamable && !video.isDownloaded) {
+                android.widget.Toast.makeText(context, "Video must be downloaded before playback.", android.widget.Toast.LENGTH_SHORT).show()
+                onDownloadClick()
+            } else {
+                onClick()
+            }
+        },
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
@@ -384,6 +395,15 @@ fun HorizontalVideoCard(
             Box(modifier = Modifier.width(136.dp)) {
                 // Pass localPath for video frame fallback when Telegram thumbnail is absent
                 VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxSize())
+                // Streamability overlay — only show play icon for streamable videos
+                if (video.isStreamable) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.PlayCircle, null, tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(28.dp))
+                    }
+                }
                 if (video.isDownloaded) {
                     Icon(Icons.Default.DownloadDone, null, tint = Color(0xFF1DB954), modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(16.dp))
                 }
@@ -473,7 +493,7 @@ fun HorizontalVideoCard(
     }
 }
 
-// Thumbnail fallback: try Telegram path first, then generate from local video file
+// Thumbnail fallback: try Telegram path first, then generate from local video file, then Hasikit logo
 @Composable
 fun VideoThumbnail(url: String?, localVideoPath: String? = null, modifier: Modifier = Modifier) {
     // TDLib returns raw file paths — prefix with file:// for Coil
@@ -513,9 +533,13 @@ fun VideoThumbnail(url: String?, localVideoPath: String? = null, modifier: Modif
             }
         },
         error = {
-            // Show placeholder icon — never show a blank black card
+            // Hasikit Fallback Thumbnail — show Hasikit logo instead of blank black card
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Icon(Icons.Default.PlayCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text("Hasikit", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
             }
         }
     )

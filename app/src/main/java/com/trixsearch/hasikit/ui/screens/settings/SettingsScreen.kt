@@ -55,7 +55,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "SettingsScreen"
-private val Context.settingsDataStore by preferencesDataStore(name = "hasikit_settings")
+// FIX #14 — Exposed as internal so PlayerScreen can read the same DataStore instance without creating a duplicate
+internal val Context.settingsDataStore by preferencesDataStore(name = "hasikit_settings")
 private val KEY_WIFI_ONLY = booleanPreferencesKey("wifi_only_downloads")
 private val KEY_AUTO_PLAY = booleanPreferencesKey("auto_play")
 private val KEY_STREAMING_QUALITY = stringPreferencesKey("streaming_quality")
@@ -69,6 +70,8 @@ private val KEY_PAUSE_ON_HEADPHONE_REMOVAL = booleanPreferencesKey("pause_on_hea
 private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
 // Added custom aspect ratios stored as comma-separated W:H strings
 private val KEY_CUSTOM_ASPECT_RATIOS = stringPreferencesKey("custom_aspect_ratios")
+// Autoplay next video after completion — true = auto play next, false = repeat same
+private val KEY_AUTOPLAY_NEXT = booleanPreferencesKey("autoplay_next_video")
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -134,6 +137,13 @@ class SettingsViewModel @Inject constructor(
     fun setResumeAfterCall(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_RESUME_AFTER_CALL] = v } }
     fun setPauseOnHeadphoneRemoval(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_PAUSE_ON_HEADPHONE_REMOVAL] = v } }
     fun setBackgroundAudio(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_BACKGROUND_AUDIO] = v } }
+
+    // Autoplay next video preference — default true (auto play next after completion)
+    val autoplayNext: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_AUTOPLAY_NEXT] ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setAutoplayNext(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_AUTOPLAY_NEXT] = v } }
 
     fun addCustomAspectRatio(ratio: String) {
         viewModelScope.launch {
@@ -349,6 +359,8 @@ fun SettingsScreen(
     val resumeAfterCall by viewModel.resumeAfterCall.collectAsState()
     val pauseOnHeadphoneRemoval by viewModel.pauseOnHeadphoneRemoval.collectAsState()
     val backgroundAudio by viewModel.backgroundAudio.collectAsState()
+    // Autoplay next video preference
+    val autoplayNext by viewModel.autoplayNext.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -439,7 +451,10 @@ fun SettingsScreen(
                             pauseOnHeadphoneRemoval = pauseOnHeadphoneRemoval,
                             onPauseOnHeadphoneRemoval = viewModel::setPauseOnHeadphoneRemoval,
                             backgroundAudio = backgroundAudio,
-                            onBackgroundAudio = viewModel::setBackgroundAudio
+                            onBackgroundAudio = viewModel::setBackgroundAudio,
+                            // Autoplay next video after completion setting
+                            autoplayNext = autoplayNext,
+                            onAutoplayNext = viewModel::setAutoplayNext
                         )
                         "downloads" -> DownloadsSection(
                             wifiOnly = wifiOnly,
@@ -729,14 +744,14 @@ private fun PlayerSection(
     onPauseOnHeadphoneRemoval: (Boolean) -> Unit,
     // Added background audio (continue when screen locked) toggle
     backgroundAudio: Boolean,
-    onBackgroundAudio: (Boolean) -> Unit
+    onBackgroundAudio: (Boolean) -> Unit,
+    // Autoplay next video after completion — radio group: auto play next vs repeat same
+    autoplayNext: Boolean,
+    onAutoplayNext: (Boolean) -> Unit
 ) {
     SettingsGroup("Player", Icons.Default.PlayCircle) {
         SettingsToggleRow(Icons.Default.PlayArrow, "Auto-play", "Automatically play next video", autoPlay, onAutoPlay)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        // Reserved for future adaptive quality support — Telegram currently provides one source, quality UI hidden
-        // SettingsClickRow(Icons.Default.HighQuality, "Streaming Quality", quality, onQualityClick)
-        // HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         // Added resume playback after phone calls setting
         SettingsToggleRow(Icons.Default.Phone, "Resume Playback After Calls", "Auto-resume when a phone call ends", resumeAfterCall, onResumeAfterCall)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -745,6 +760,40 @@ private fun PlayerSection(
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         // Added background audio (continue when screen locked) setting
         SettingsToggleRow(Icons.Default.ScreenLockPortrait, "Continue Audio When Screen Locked", "Keep playing audio when screen turns off", backgroundAudio, onBackgroundAudio)
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Autoplay settings — radio group: Auto Play Next Video vs Repeat Same Video
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.SkipNext, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(16.dp))
+                Text("After Video Ends", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyLarge)
+            }
+            Spacer(Modifier.height(6.dp))
+            // Radio option: Auto Play Next Video After Completion
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onAutoplayNext(true) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = autoplayNext, onClick = { onAutoplayNext(true) })
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Auto Play Next Video After Completion", style = MaterialTheme.typography.bodyMedium)
+                    Text("Automatically start the next video", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            // Radio option: Repeat Same Video
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onAutoplayNext(false) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = !autoplayNext, onClick = { onAutoplayNext(false) })
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Repeat Same Video", style = MaterialTheme.typography.bodyMedium)
+                    Text("Loop the current video on completion", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 

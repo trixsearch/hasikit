@@ -64,7 +64,10 @@ fun NavGraph(
             HomeScreen(navController, homeViewModel)
         }
         composable(Screen.Search.route) {
-            SearchScreen(navController)
+            // Two-stage search — pass local video cache from HomeViewModel so Stage 1 works immediately
+            val searchViewModel: com.trixsearch.hasikit.ui.screens.search.SearchViewModel = hiltViewModel()
+            LaunchedEffect(videos) { searchViewModel.setLocalVideos(videos) }
+            SearchScreen(navController, searchViewModel)
         }
         composable(Screen.Library.route) {
             LibraryScreen(navController)

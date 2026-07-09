@@ -11,5 +11,8 @@ data class Video(
     val localPath: String? = null,
     val isDownloaded: Boolean = false,
     val downloadProgress: Float = 0f,
-    val sourceLabel: String = ""
+    val sourceLabel: String = "",
+    // Streamability logic — true if Telegram file can be streamed directly without full download
+    // MessageVideo = streamable, MessageDocument = download required
+    val isStreamable: Boolean = true
 )

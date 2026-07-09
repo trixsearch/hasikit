@@ -384,7 +384,9 @@ private fun TdApi.Message.toTelegramMedia(chatId: Long): TelegramMedia? {
                 size = video.video.size,
                 thumbnailFileId = video.thumbnail?.file?.id?.toLong(),
                 mimeType = video.mimeType,
-                uploadDate = date
+                uploadDate = date,
+                // MessageVideo is always streamable — TDLib can progressive-download it
+                isStreamable = true
             )
         }
         is TdApi.MessageDocument -> {
@@ -401,7 +403,9 @@ private fun TdApi.Message.toTelegramMedia(chatId: Long): TelegramMedia? {
                 size = doc.document.size,
                 thumbnailFileId = doc.thumbnail?.file?.id?.toLong(),
                 mimeType = doc.mimeType,
-                uploadDate = date
+                uploadDate = date,
+                // MessageDocument requires full download before playback
+                isStreamable = false
             )
         }
         else -> null

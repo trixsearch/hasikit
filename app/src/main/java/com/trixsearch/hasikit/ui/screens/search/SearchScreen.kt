@@ -33,6 +33,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
@@ -54,33 +56,86 @@ class SearchViewModel @Inject constructor(
     // Cache resolved chat IDs per source identifier
     private val chatIdCache = mutableMapOf<String, Long>()
 
+    // Stage 1 results — local cache hits shown immediately
+    private val _localResults = MutableStateFlow<List<Video>>(emptyList())
+    val localResults: StateFlow<List<Video>> = _localResults
+
+    // Stage 2 results — Telegram search results merged with local
+    private val _telegramResults = MutableStateFlow<List<Video>>(emptyList())
+    val telegramResults: StateFlow<List<Video>> = _telegramResults
+
+    // Combined results — local first, then Telegram-only results appended
+    val results: StateFlow<List<Video>> = combine(_localResults, _telegramResults) { local, telegram ->
+        // Merge: local results first, then Telegram results not already in local
+        val localIds = local.map { it.id }.toSet()
+        local + telegram.filter { it.id !in localIds }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Loading state for Stage 2 Telegram search
+    private val _isTelegramSearching = MutableStateFlow(false)
+    val isTelegramSearching: StateFlow<Boolean> = _isTelegramSearching
+
+    // Local video cache injected from HomeViewModel via setLocalVideos()
+    private val _localVideoCache = MutableStateFlow<List<Video>>(emptyList())
+
+    fun setLocalVideos(videos: List<Video>) {
+        _localVideoCache.value = videos
+    }
+
+    // Two-stage search job — started in init block, runs for the lifetime of the ViewModel
+    // @OptIn moved to the function because init blocks cannot carry annotations in Kotlin
+    init {
+        startSearchJob()
+    }
+
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-    val results: StateFlow<List<Video>> = combine(_query, _selectedSource) { q, src -> q to src }
-        .debounce(300)
-        .flatMapLatest { (q, selectedSrc) ->
-            if (q.isBlank()) return@flatMapLatest flowOf(emptyList())
-            flow {
-                val allSources = buildList {
-                    addAll(sourceConfig.officialSources)
-                    addAll(sourceConfig.userSourcesFlow.first())
-                }
-                val filteredSources = if (selectedSrc == null) allSources
-                    else allSources.filter { it.identifier == selectedSrc }
-                val allResults = coroutineScope {
-                    filteredSources.map { source ->
-                        async {
-                            val chatId = resolveChatId(source) ?: return@async emptyList<Video>()
-                            channelRepository.searchChannelMedia(chatId, q)
-                                .getOrNull()
-                                ?.map { it.toVideo(source) }
-                                ?: emptyList()
+    private fun startSearchJob() {
+        viewModelScope.launch {
+            combine(_query, _selectedSource) { q, src -> q to src }
+                .debounce(300)
+                .collectLatest { (q, selectedSrc) ->
+                    if (q.isBlank()) {
+                        _localResults.value = emptyList()
+                        _telegramResults.value = emptyList()
+                        return@collectLatest
+                    }
+
+                    // Stage 1 — search locally in already loaded/cached videos immediately
+                    val localHits = _localVideoCache.value.filter {
+                        it.title.contains(q, ignoreCase = true) ||
+                        it.sourceLabel.contains(q, ignoreCase = true)
+                    }
+                    _localResults.value = localHits
+
+                    // Stage 2 — perform Telegram source search for content not yet loaded locally
+                    _isTelegramSearching.value = true
+                    try {
+                        val allSources = buildList {
+                            addAll(sourceConfig.officialSources)
+                            addAll(sourceConfig.userSourcesFlow.first())
                         }
-                    }.awaitAll().flatten()
+                        val filteredSources = if (selectedSrc == null) allSources
+                            else allSources.filter { it.identifier == selectedSrc }
+                        val telegramHits = coroutineScope {
+                            filteredSources.map { source ->
+                                async {
+                                    val chatId = resolveChatId(source) ?: return@async emptyList<Video>()
+                                    channelRepository.searchChannelMedia(chatId, q)
+                                        .getOrNull()
+                                        ?.map { it.toVideo(source) }
+                                        ?: emptyList()
+                                }
+                            }.awaitAll().flatten()
+                        }
+                        _telegramResults.value = telegramHits
+                    } catch (e: Exception) {
+                        android.util.Log.e("SearchViewModel", "Telegram search failed", e)
+                    } finally {
+                        _isTelegramSearching.value = false
+                    }
                 }
-                emit(allResults)
-            }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
     fun setQuery(q: String) { _query.value = q }
     fun setSelectedSource(identifier: String?) { _selectedSource.value = identifier }
@@ -101,7 +156,9 @@ private fun TelegramMedia.toVideo(source: TelegramSource) = Video(
     telegramFileId = fileId.toString(),
     duration = duration.toLong() * 1000L,
     size = size,
-    sourceLabel = source.displayName
+    sourceLabel = source.displayName,
+    // Streamability logic — passed from TelegramMedia
+    isStreamable = isStreamable
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,7 +168,9 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val query by viewModel.query.collectAsState()
+    // Two-stage search results — local + Telegram merged
     val results by viewModel.results.collectAsState()
+    val isTelegramSearching by viewModel.isTelegramSearching.collectAsState()
     val availableSources by viewModel.availableSources.collectAsState()
     val selectedSource by viewModel.selectedSource.collectAsState()
 
@@ -164,6 +223,14 @@ fun SearchScreen(
                         )
                     }
                 }
+                // Stage 2 indicator — shown while Telegram search is in progress
+                if (isTelegramSearching) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text("Searching Telegram sources…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     ) { padding ->
@@ -173,7 +240,7 @@ fun SearchScreen(
                     Text("Type to search all sources", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            results.isEmpty() -> {
+            results.isEmpty() && !isTelegramSearching -> {
                 Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

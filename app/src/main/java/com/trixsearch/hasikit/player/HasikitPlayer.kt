@@ -44,6 +44,10 @@ class HasikitPlayer @Inject constructor(
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying
 
+    // Video completion state — true when playback reaches the end of the media
+    private val _isEnded = MutableStateFlow(false)
+    val isEnded: StateFlow<Boolean> = _isEnded
+
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering
 
@@ -99,6 +103,8 @@ class HasikitPlayer @Inject constructor(
                             else -> "UNKNOWN($playbackState)"
                         }
                         _isBuffering.value = playbackState == Player.STATE_BUFFERING
+                        // Video completion — set ended flag so UI can show replay option
+                        _isEnded.value = playbackState == Player.STATE_ENDED
                         Log.d(TAG, "[STATE] $name | pos=${currentPosition}ms | dur=${duration}ms | bufferedPct=${bufferedPercentage}%")
                     }
 
@@ -214,6 +220,8 @@ class HasikitPlayer @Inject constructor(
 
     fun playVideo(url: String, startPosition: Long = 0L, videoId: String = "", title: String = "") {
         _error.value = null
+        // Clear ended state when a new video starts
+        _isEnded.value = false
         val mime = mimeTypeForUrl(url)
         val isLocal = url.startsWith("file://")
         Log.d(TAG, "[PLAY] VIDEO_ID=$videoId TITLE=$title SOURCE=${if (isLocal) "LOCAL" else "REMOTE"} URL=$url MIME=${mime ?: "auto"} START=${startPosition}ms")
@@ -259,6 +267,14 @@ class HasikitPlayer @Inject constructor(
 
     fun pause() { exoPlayer?.pause(); Log.d(TAG, "[PAUSE] pos=${exoPlayer?.currentPosition}ms") }
     fun resume() { exoPlayer?.play(); Log.d(TAG, "[RESUME] pos=${exoPlayer?.currentPosition}ms") }
+
+    // Video completion — restart from beginning (YouTube-style: press play after end = restart)
+    fun restartFromBeginning() {
+        Log.d(TAG, "[RESTART] seeking to 0 and playing")
+        _isEnded.value = false
+        exoPlayer?.seekTo(0L)
+        exoPlayer?.play()
+    }
 
     // Stops playback and resets media without destroying the ExoPlayer instance
     fun stop() {

@@ -11,5 +11,7 @@ data class TelegramMedia(
     val size: Long,          // bytes
     val thumbnailFileId: Long?,
     val mimeType: String,
-    val uploadDate: Int      // unix timestamp
+    val uploadDate: Int,     // unix timestamp
+    // Streamability logic — MessageVideo = true (can stream), MessageDocument = false (download required)
+    val isStreamable: Boolean = true
 )

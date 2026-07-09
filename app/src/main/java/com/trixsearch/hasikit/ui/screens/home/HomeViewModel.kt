@@ -101,9 +101,18 @@ class HomeViewModel @Inject constructor(
         val downloadTasks = pair.second
         val dbById = dbVideos.associateBy { it.id }
         val filteredPages = if (sourceFilter == null) pages else pages.filter { it.source.displayName == sourceFilter }
+        // Duplicate content filter — deduplicate by fileId, then by (title+size) for cross-source duplicates
+        // Prefer newest source (first occurrence wins since pages are ordered newest-first)
+        val seenFileIds = mutableSetOf<Long>()
+        val seenTitleSize = mutableSetOf<String>()
         filteredPages.flatMap { page ->
-            page.media.map { media ->
+            page.media.mapNotNull { media ->
                 val id = "${media.channelId}_${media.messageId}"
+                // Deduplicate by Telegram file ID (exact same file)
+                if (media.fileId != 0L && !seenFileIds.add(media.fileId)) return@mapNotNull null
+                // Deduplicate by title+size (likely same content from different sources)
+                val titleSizeKey = "${media.title.lowercase().trim()}_${media.size}"
+                if (!seenTitleSize.add(titleSizeKey)) return@mapNotNull null
                 val db = dbById[id]
                 val task = downloadTasks[id]
                 val isDownloaded = db?.isDownloaded == true || task?.state == DownloadState.COMPLETED
@@ -125,7 +134,9 @@ class HomeViewModel @Inject constructor(
                     localPath = localPath,
                     isDownloaded = isDownloaded,
                     downloadProgress = downloadProgress,
-                    sourceLabel = page.source.displayName
+                    sourceLabel = page.source.displayName,
+                    // Streamability logic — passed from TelegramMedia
+                    isStreamable = media.isStreamable
                 )
             }
         }

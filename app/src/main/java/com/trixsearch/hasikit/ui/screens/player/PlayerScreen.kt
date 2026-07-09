@@ -24,6 +24,7 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -73,17 +74,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import com.trixsearch.hasikit.ui.screens.settings.settingsDataStore
 import org.drinkless.tdlib.TdApi
 import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.math.abs
 
-// Player settings DataStore — reads same store as SettingsViewModel
-private val Context.playerSettingsStore by preferencesDataStore(name = "hasikit_settings")
+// FIX #14 — DataStore singleton crash: PlayerScreen must NOT create its own preferencesDataStore
+// for "hasikit_settings" because SettingsScreen already owns that instance.
+// Instead, read the same store via the extension defined in SettingsScreen.kt (same package).
+// Keys must match exactly what SettingsViewModel writes.
 private val KEY_RESUME_AFTER_CALL = booleanPreferencesKey("resume_after_call")
 private val KEY_PAUSE_ON_HEADPHONE = booleanPreferencesKey("pause_on_headphone_removal")
 private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
+// Autoplay settings keys — read by PlayerScreen to decide what to do after video ends
+private val KEY_AUTOPLAY_NEXT = booleanPreferencesKey("autoplay_next_video")
 
 private const val TAG = "PLAYER_DEBUG"
 private const val CONTROLS_HIDE_DELAY = 3000L
@@ -241,6 +246,8 @@ fun PlayerScreen(
 
     val isPlaying by player.isPlaying.collectAsState()
     val isBuffering by player.isBuffering.collectAsState()
+    // Video completion state — true when ExoPlayer reaches STATE_ENDED
+    val isEnded by player.isEnded.collectAsState()
     val error by player.error.collectAsState()
     val playbackSpeed by player.playbackSpeed.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
@@ -310,15 +317,20 @@ fun PlayerScreen(
 
     val controlsScope = rememberCoroutineScope()
 
-    // Read player preferences from DataStore
-    val resumeAfterCall by context.playerSettingsStore.data
+    // FIX #14 — Read player preferences from the shared settingsDataStore (same instance as SettingsViewModel)
+    // Using settingsDataStore extension from SettingsScreen.kt to avoid multiple DataStore instances on same file
+    val resumeAfterCall by context.settingsDataStore.data
         .map { it[KEY_RESUME_AFTER_CALL] ?: true }
         .collectAsState(initial = true)
-    val pauseOnHeadphoneRemoval by context.playerSettingsStore.data
+    val pauseOnHeadphoneRemoval by context.settingsDataStore.data
         .map { it[KEY_PAUSE_ON_HEADPHONE] ?: true }
         .collectAsState(initial = true)
-    val backgroundAudio by context.playerSettingsStore.data
+    val backgroundAudio by context.settingsDataStore.data
         .map { it[KEY_BACKGROUND_AUDIO] ?: true }
+        .collectAsState(initial = true)
+    // Autoplay next video preference — default true (auto play next after completion)
+    val autoplayNext by context.settingsDataStore.data
+        .map { it[KEY_AUTOPLAY_NEXT] ?: true }
         .collectAsState(initial = true)
 
     // Track whether playback was interrupted by a phone call so we can resume
@@ -723,7 +735,16 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-                        Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                        // Player Title Overlay — marquee scrolls right-to-left for long titles, hides with controls
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier
+                                .weight(1f)
+                                .basicMarquee(iterations = Int.MAX_VALUE),
+                            maxLines = 1
+                        )
                         // Aspect ratio — single tap cycles
                         IconButton(onClick = {
                             val idx = FIT_CYCLE.indexOf(fitMode)
@@ -825,8 +846,24 @@ fun PlayerScreen(
                     // Center controls
                     Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         IconButton(onClick = { player.seekTo(currentPosition - SEEK_INCREMENT_MS) }) { Icon(Icons.Default.Replay10, "Rewind", tint = Color.White, modifier = Modifier.size(44.dp)) }
-                        IconButton(onClick = { if (isPlaying) player.pause() else player.resume() }, modifier = Modifier.size(64.dp)) {
-                            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", tint = Color.White, modifier = Modifier.size(64.dp))
+                        // Video completion — if ended, show Replay icon; press restarts from beginning (YouTube-style)
+                        IconButton(onClick = {
+                            when {
+                                isEnded -> player.restartFromBeginning()
+                                isPlaying -> player.pause()
+                                else -> player.resume()
+                            }
+                        }, modifier = Modifier.size(64.dp)) {
+                            Icon(
+                                when {
+                                    isEnded -> Icons.Default.Replay
+                                    isPlaying -> Icons.Default.Pause
+                                    else -> Icons.Default.PlayArrow
+                                },
+                                "Play/Pause",
+                                tint = Color.White,
+                                modifier = Modifier.size(64.dp)
+                            )
                         }
                         IconButton(onClick = { player.seekTo(currentPosition + SEEK_INCREMENT_MS) }) { Icon(Icons.Default.Forward10, "Forward", tint = Color.White, modifier = Modifier.size(44.dp)) }
                     }
