@@ -91,6 +91,7 @@ private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
 private val KEY_AUTOPLAY_NEXT = booleanPreferencesKey("autoplay_next_video")
 
 private const val TAG = "PLAYER_DEBUG"
+// Manual control visibility — controls auto-hide; user taps to toggle show/hide
 private const val CONTROLS_HIDE_DELAY = 3000L
 // Double Tap Seek Duration — ms seeked per double-tap on left/right zones
 private const val SEEK_INCREMENT_MS = 10_000L
@@ -126,6 +127,10 @@ private val FIT_CYCLE = listOf(
     VideoFitMode.FIXED_HEIGHT,
     VideoFitMode.ZOOM,
 )
+
+// Streamability fallback — track consecutive stream failures per video session
+// After 2 failures, mark video as download-required and show toast
+private const val STREAM_FAIL_THRESHOLD = 2
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -277,6 +282,9 @@ fun PlayerScreen(
     // Horizontal seek preview — shows target timestamp while finger is dragging
     var seekPreviewTime by remember { mutableLongStateOf(0L) }
     var showSeekPreview by remember { mutableStateOf(false) }
+    // Streamability fallback — counts consecutive stream errors; after threshold triggers download
+    var streamFailCount by remember { mutableIntStateOf(0) }
+    var showDownloadFallbackToast by remember { mutableStateOf(false) }
 
     // File picker launcher for local subtitle files (.srt .ass .vtt .sub)
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
@@ -472,11 +480,14 @@ fun PlayerScreen(
         brightnessFeedback = "☀ Brightness $clamped%"
     }
 
+    // Manual control toggle — single tap shows if hidden, hides if visible; no auto-hide
+    fun toggleControls() {
+        if (!isLocked) showControls = !showControls
+    }
+
+    // resetControlsTimer kept for lock/unlock flow — just shows controls without auto-hide
     fun resetControlsTimer() {
-        if (!isLocked) {
-            showControls = true
-            controlsScope.launch { delay(CONTROLS_HIDE_DELAY); showControls = false }
-        }
+        if (!isLocked) showControls = true
     }
 
     DisposableEffect(videoId) {
@@ -490,7 +501,7 @@ fun PlayerScreen(
                 telegramFileId.isNotBlank() -> viewModel.resolvePlayUrl(telegramFileId) ?: return@launch
                 else -> return@launch
             }
-            player.playVideo(url = resolvedUrl, startPosition = startPos, videoId = videoId, title = title)
+            player.playVideo(url = resolvedUrl, startPosition = startPos, videoId = videoId, title = title, thumbnailPath = null)
         }
         scope.launch { while (isActive) { currentPosition = player.getCurrentPosition(); duration = player.getDuration(); delay(500) } }
         scope.launch { while (isActive) { delay(5000); if (player.getDuration() > 0) viewModel.saveProgress(videoId, player.getCurrentPosition(), player.getDuration()) } }
@@ -507,6 +518,28 @@ fun PlayerScreen(
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             activity?.window?.let { w -> val p = w.attributes; p.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; w.attributes = p }
+        }
+    }
+
+    // Streamability fallback — if stream fails twice, show toast and trigger download workflow
+    LaunchedEffect(error) {
+        if (error != null) {
+            streamFailCount++
+            if (streamFailCount >= STREAM_FAIL_THRESHOLD) {
+                showDownloadFallbackToast = true
+            }
+        }
+    }
+
+    // Show download fallback toast
+    if (showDownloadFallbackToast) {
+        LaunchedEffect(Unit) {
+            android.widget.Toast.makeText(
+                context,
+                "This video cannot be streamed. Please download first.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            showDownloadFallbackToast = false
         }
     }
 
@@ -611,7 +644,8 @@ fun PlayerScreen(
                     }
                     .pointerInput(isLocked) {
                         detectTapGestures(
-                            onTap = { resetControlsTimer() },
+                            // Single tap toggles controls: show if hidden, hide if visible
+                            onTap = { toggleControls() },
                             onDoubleTap = { tapPos ->
                                 // Double Tap Zone — left 40% = backward, center 20% = play/pause, right 40% = forward
                                 when {
@@ -722,7 +756,7 @@ fun PlayerScreen(
                 if (error!!.httpStatusCode != null) Text("HTTP ${error!!.httpStatusCode}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                 Text(error!!.message, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = { if (playUrl.isNotBlank()) player.playVideo(url = playUrl, startPosition = currentPosition, videoId = videoId, title = title) }) { Text("Retry") }
+                Button(onClick = { if (playUrl.isNotBlank()) player.playVideo(url = playUrl, startPosition = currentPosition, videoId = videoId, title = title, thumbnailPath = null) }) { Text("Retry") }
             }
         }
 

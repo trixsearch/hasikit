@@ -1,9 +1,13 @@
 package com.trixsearch.hasikit.player
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -17,13 +21,22 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "PLAYER_DEBUG"
 private const val USER_AGENT = "Hasikit/1.0 (Android; ExoPlayer)"
+// MediaSession app name shown on lock screen and notification
+private const val APP_DISPLAY_NAME = "Hasikit"
+
+// Background scope for thumbnail loading without blocking the main thread
+private val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 data class TrackInfo(val groupIndex: Int, val trackIndex: Int, val label: String, val isSelected: Boolean)
 
@@ -218,7 +231,7 @@ class HasikitPlayer @Inject constructor(
         else -> null
     }
 
-    fun playVideo(url: String, startPosition: Long = 0L, videoId: String = "", title: String = "") {
+    fun playVideo(url: String, startPosition: Long = 0L, videoId: String = "", title: String = "", thumbnailPath: String? = null) {
         _error.value = null
         // Clear ended state when a new video starts
         _isEnded.value = false
@@ -226,15 +239,47 @@ class HasikitPlayer @Inject constructor(
         val isLocal = url.startsWith("file://")
         Log.d(TAG, "[PLAY] VIDEO_ID=$videoId TITLE=$title SOURCE=${if (isLocal) "LOCAL" else "REMOTE"} URL=$url MIME=${mime ?: "auto"} START=${startPosition}ms")
 
-        // MediaSession — set title in MediaMetadata so lock screen / notification shows it
+        // MediaSession — build metadata with app name, title, and thumbnail for lock screen/notification
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title)
+            // App name shown in notification and lock screen alongside the video title
+            .setArtist(APP_DISPLAY_NAME)
+            .setAlbumTitle(APP_DISPLAY_NAME)
+
+        // Load thumbnail bitmap for lock screen artwork in background
+        if (!thumbnailPath.isNullOrBlank()) {
+            playerScope.launch {
+                try {
+                    val path = if (thumbnailPath.startsWith("file://")) thumbnailPath.removePrefix("file://") else thumbnailPath
+                    val bitmap: Bitmap? = BitmapFactory.decodeFile(path)
+                    if (bitmap != null) {
+                        // Update MediaItem with artwork URI so MediaSession shows thumbnail
+                        val updatedItem = exoPlayer?.currentMediaItem?.buildUpon()
+                            ?.setMediaMetadata(
+                                metadataBuilder
+                                    .setArtworkUri(Uri.parse(if (thumbnailPath.startsWith("file://")) thumbnailPath else "file://$thumbnailPath"))
+                                    .build()
+                            )?.build()
+                        if (updatedItem != null) {
+                            // Post to main thread — ExoPlayer must be accessed on main thread
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                val pos = exoPlayer?.currentPosition ?: 0L
+                                exoPlayer?.setMediaItem(updatedItem, pos)
+                                exoPlayer?.prepare()
+                                exoPlayer?.play()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "[THUMBNAIL] failed to load artwork: ${e.message}")
+                }
+            }
+        }
+
         val mediaItem = MediaItem.Builder()
             .setUri(url)
             .apply { if (mime != null) setMimeType(mime) }
-            .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .build()
-            )
+            .setMediaMetadata(metadataBuilder.build())
             .build()
 
         exoPlayer?.apply {

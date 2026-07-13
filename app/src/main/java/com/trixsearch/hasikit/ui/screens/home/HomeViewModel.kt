@@ -235,6 +235,9 @@ class HomeViewModel @Inject constructor(
 
     private suspend fun loadPage(source: TelegramSource, chatId: Long, reset: Boolean): SourcePage? {
         val existing = if (reset) null else _sourcePages.value.find { it.chatId == chatId }
+        // Pagination cursor: use the oldest (minimum) messageId loaded so far as the offset.
+        // TDLib GetChatHistory fetches messages OLDER than fromMessageId when offset=0.
+        // On reset (initial load), offsetId=0 means start from the newest message.
         val offsetId = if (reset) 0L else existing?.lastMessageId ?: 0L
         if (existing != null && !existing.hasMore && !reset) return existing
 
@@ -242,11 +245,13 @@ class HomeViewModel @Inject constructor(
             .getOrNull()
             ?.let { page ->
                 val allMedia = if (reset) page else (existing?.media ?: emptyList()) + page
+                // Use the minimum messageId as the next pagination cursor (oldest message loaded)
+                val oldestMessageId = allMedia.minOfOrNull { it.messageId } ?: offsetId
                 SourcePage(
                     source = source,
                     chatId = chatId,
                     media = allMedia,
-                    lastMessageId = page.lastOrNull()?.messageId ?: offsetId,
+                    lastMessageId = oldestMessageId,
                     hasMore = page.size >= PAGE_SIZE
                 )
             }

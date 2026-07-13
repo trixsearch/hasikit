@@ -2,8 +2,11 @@ package com.trixsearch.hasikit.ui.screens.request
 
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,8 +22,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -32,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.drinkless.tdlib.TdApi
+import java.util.Calendar
 import javax.inject.Inject
 import kotlin.coroutines.resume
 
@@ -111,8 +117,90 @@ class RequestContentViewModel @Inject constructor(
         }
 }
 
-// Content type options for the dropdown
+// Content type options for the proper dropdown selector
 private val CONTENT_TYPES = listOf("Movie", "Anime", "Web Series", "TV Show", "Documentary", "Other")
+
+// Wheel year picker dialog — range 1700 to current year, scroll-snap style
+@Composable
+private fun YearPickerDialog(
+    currentYear: Int?,
+    onYearSelected: (Int?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val currentCalendarYear = Calendar.getInstance().get(Calendar.YEAR)
+    // Years list from current year down to 1700 so newest is at top
+    val years = remember { (currentCalendarYear downTo 1700).toList() }
+    val initialIndex = if (currentYear != null) years.indexOf(currentYear).coerceAtLeast(0) else 0
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    // Track which year is centred in the picker wheel
+    val centredYear by remember {
+        derivedStateOf {
+            val offset = listState.firstVisibleItemScrollOffset
+            val idx = if (offset > 28) listState.firstVisibleItemIndex + 1 else listState.firstVisibleItemIndex
+            years.getOrNull(idx)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Select Year", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("Optional", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                // Wheel picker — snap-scroll list showing 5 items, centre item is selected
+                Box(modifier = Modifier.height(200.dp).fillMaxWidth()) {
+                    // Highlight band for selected item
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+                    )
+                    LazyColumn(
+                        state = listState,
+                        flingBehavior = rememberSnapFlingBehavior(listState),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 80.dp)
+                    ) {
+                        items(years.size) { idx ->
+                            val year = years[idx]
+                            val isSelected = year == centredYear
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = year.toString(),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Clear year — makes year optional
+                    TextButton(onClick = { onYearSelected(null); onDismiss() }) { Text("Clear") }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(onClick = { onYearSelected(centredYear); onDismiss() }) { Text("OK") }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,8 +212,11 @@ fun RequestContentScreen(
 
     var contentName by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<String?>(null) }
-    var yearInput by remember { mutableStateOf("") }
+    // Year stored as Int? — null means not selected (optional field)
+    var selectedYear by remember { mutableStateOf<Int?>(null) }
     var typeDropdownExpanded by remember { mutableStateOf(false) }
+    // Year picker dialog visibility
+    var showYearPicker by remember { mutableStateOf(false) }
 
     // Chat-like message list — shows sent requests in session
     val sentMessages = remember { mutableStateListOf<String>() }
@@ -134,13 +225,22 @@ fun RequestContentScreen(
     LaunchedEffect(sendState) {
         if (sendState is RequestContentViewModel.SendState.Success) {
             val typePart = if (!selectedType.isNullOrBlank()) " (${selectedType})" else ""
-            val yearPart = if (yearInput.isNotBlank()) "\nYear: $yearInput" else ""
+            val yearPart = if (selectedYear != null) "\nYear: $selectedYear" else ""
             sentMessages.add("I would like to request:\n\n$contentName$typePart$yearPart")
             contentName = ""
             selectedType = null
-            yearInput = ""
+            selectedYear = null
             viewModel.resetState()
         }
+    }
+
+    // Year picker dialog — shown when user taps the Year field
+    if (showYearPicker) {
+        YearPickerDialog(
+            currentYear = selectedYear,
+            onYearSelected = { selectedYear = it },
+            onDismiss = { showYearPicker = false }
+        )
     }
 
     Scaffold(
@@ -277,55 +377,90 @@ fun RequestContentScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Optional: Type dropdown
+                    // Type: proper dropdown selector — entire row is clickable, no text input
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = selectedType ?: "",
                             onValueChange = {},
-                            label = { Text("Type (optional)") },
-                            placeholder = { Text("Movie, Anime…") },
+                            label = { Text("Type(optional)") },
+                            placeholder = { Text("Select type…") },
                             modifier = Modifier.fillMaxWidth(),
                             readOnly = true,
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
+                            leadingIcon = { Icon(Icons.Default.Category, null, modifier = Modifier.size(18.dp)) },
                             trailingIcon = {
-                                IconButton(onClick = { typeDropdownExpanded = true }, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(20.dp))
-                                }
-                            }
+                                Icon(
+                                    if (typeDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                    null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            // Make entire field clickable to open dropdown
+                            colors = OutlinedTextFieldDefaults.colors()
+                        )
+                        // Invisible overlay to capture clicks on the entire field area
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { typeDropdownExpanded = true }
                         )
                         DropdownMenu(
                             expanded = typeDropdownExpanded,
                             onDismissRequest = { typeDropdownExpanded = false }
                         ) {
+                            // None option to clear selection
                             DropdownMenuItem(
-                                text = { Text("None") },
+                                text = { Text("None", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                                 onClick = { selectedType = null; typeDropdownExpanded = false }
                             )
+                            HorizontalDivider()
                             CONTENT_TYPES.forEach { type ->
                                 DropdownMenuItem(
-                                    text = { Text(type, fontWeight = if (selectedType == type) FontWeight.Bold else FontWeight.Normal) },
+                                    text = {
+                                        Text(
+                                            type,
+                                            fontWeight = if (selectedType == type) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selectedType == type) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    leadingIcon = if (selectedType == type) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }
+                                    } else null,
                                     onClick = { selectedType = type; typeDropdownExpanded = false }
                                 )
                             }
                         }
                     }
 
-                    // Optional: Year
-                    OutlinedTextField(
-                        value = yearInput,
-                        onValueChange = { if (it.length <= 4) yearInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Year") },
-                        placeholder = { Text("2024") },
-                        modifier = Modifier.width(100.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                    // Year: wheel picker — tapping opens scroll picker dialog, not a text field
+                    Box(modifier = Modifier.width(110.dp)) {
+                        OutlinedTextField(
+                            value = selectedYear?.toString() ?: "",
+                            onValueChange = {},
+                            label = { Text("Year") },
+                            placeholder = { Text("Optional") },
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            trailingIcon = {
+                                Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.size(18.dp))
+                            },
+                            colors = OutlinedTextFieldDefaults.colors()
+                        )
+                        // Invisible overlay to open year picker on tap
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { showYearPicker = true }
+                        )
+                    }
                 }
 
                 // Send button
                 Button(
-                    onClick = { viewModel.sendRequest(contentName.trim(), selectedType, yearInput.trim().ifBlank { null }) },
+                    onClick = { viewModel.sendRequest(contentName.trim(), selectedType, selectedYear?.toString()) },
                     enabled = contentName.isNotBlank() && sendState !is RequestContentViewModel.SendState.Sending,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)

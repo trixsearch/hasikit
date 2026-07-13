@@ -46,13 +46,17 @@ import com.trixsearch.hasikit.telegram.config.TelegramSource
 import com.trixsearch.hasikit.telegram.config.TelegramSourceConfig
 import com.trixsearch.hasikit.telegram.domain.model.TelegramUser
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
+import com.trixsearch.hasikit.telegram.service.TelegramClientService
 import com.trixsearch.hasikit.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.drinkless.tdlib.TdApi
 import javax.inject.Inject
+import kotlin.coroutines.resume
 
 private const val TAG = "SettingsScreen"
 // FIX #14 — Exposed as internal so PlayerScreen can read the same DataStore instance without creating a duplicate
@@ -79,7 +83,9 @@ class SettingsViewModel @Inject constructor(
     private val repository: VideoRepository,
     private val downloadManager: HasikitDownloadManager,
     private val telegramAuthRepository: TelegramAuthRepository,
-    private val telegramSourceConfig: TelegramSourceConfig
+    private val telegramSourceConfig: TelegramSourceConfig,
+    // Injected for fetching user's joined Telegram chats
+    private val telegramClientService: TelegramClientService
 ) : ViewModel() {
 
     // Theme — stored in the same DataStore as MainActivity reads
@@ -295,7 +301,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // Telegram source channel
+    // Telegram sources
     val officialSources = telegramSourceConfig.officialSources
 
     val userSources: StateFlow<List<TelegramSource>> = telegramSourceConfig.userSourcesFlow
@@ -312,6 +318,66 @@ class SettingsViewModel @Inject constructor(
     fun removeUserSource(identifier: String) {
         viewModelScope.launch {
             telegramSourceConfig.removeUserSource(identifier)
+        }
+    }
+
+    // Import from Telegram — fetch user's joined channels, groups, supergroups
+    data class TelegramChatEntry(val chatId: Long, val title: String, val type: String)
+
+    private val _joinedChats = MutableStateFlow<List<TelegramChatEntry>>(emptyList())
+    val joinedChats: StateFlow<List<TelegramChatEntry>> = _joinedChats
+
+    private val _isLoadingChats = MutableStateFlow(false)
+    val isLoadingChats: StateFlow<Boolean> = _isLoadingChats
+
+    // Fetch all joined channels/groups/supergroups from TDLib
+    fun fetchJoinedChats() {
+        viewModelScope.launch {
+            _isLoadingChats.value = true
+            _joinedChats.value = emptyList()
+            try {
+                val chats = suspendCancellableCoroutine<TdApi.Chats?> { cont ->
+                    telegramClientService.send(TdApi.GetChats(TdApi.ChatListMain(), 500)) { result ->
+                        cont.resume(if (result is TdApi.Chats) result else null)
+                    }
+                    cont.invokeOnCancellation {}
+                } ?: return@launch
+
+                // Convert LongArray to List before mapNotNull — LongArray has no mapNotNull extension
+                val entries = chats.chatIds.toList().mapNotNull { chatId ->
+                    suspendCancellableCoroutine<TelegramChatEntry?> { cont ->
+                        telegramClientService.send(TdApi.GetChat(chatId)) { result ->
+                            if (result is TdApi.Chat) {
+                                val type = when (val t = result.type) {
+                                    is TdApi.ChatTypeSupergroup -> if (t.isChannel) "Channel" else "Supergroup"
+                                    is TdApi.ChatTypeBasicGroup -> "Group"
+                                    else -> null
+                                }
+                                // Only include channels, groups, supergroups — skip private chats
+                                if (type != null) cont.resume(TelegramChatEntry(chatId, result.title, type))
+                                else cont.resume(null)
+                            } else cont.resume(null)
+                        }
+                        cont.invokeOnCancellation {}
+                    }
+                }
+                _joinedChats.value = entries.sortedBy { entry -> entry.title }
+            } catch (e: Exception) {
+                Log.e(TAG, "fetchJoinedChats error", e)
+            } finally {
+                _isLoadingChats.value = false
+            }
+        }
+    }
+
+    // Add multiple sources at once from the import dialog
+    fun addUserSourcesFromChats(selected: List<TelegramChatEntry>) {
+        viewModelScope.launch {
+            selected.forEach { chat ->
+                telegramSourceConfig.addUserSource(
+                    TelegramSource(identifier = chat.chatId.toString(), displayName = chat.title)
+                )
+            }
         }
     }
 }
@@ -354,6 +420,9 @@ fun SettingsScreen(
     val currentUser by viewModel.currentUser.collectAsState()
     val userSources by viewModel.userSources.collectAsState()
     val officialSources = viewModel.officialSources
+    // Import from Telegram joined chats state
+    val joinedChats by viewModel.joinedChats.collectAsState()
+    val isLoadingChats by viewModel.isLoadingChats.collectAsState()
     val galleryVisible by viewModel.galleryVisible.collectAsState()
     val downloadPath by viewModel.downloadPath.collectAsState()
     val resumeAfterCall by viewModel.resumeAfterCall.collectAsState()
@@ -434,11 +503,16 @@ fun SettingsScreen(
                 items(visibleSections, key = { it.id }) { section ->
                     when (section.id) {
                         "account" -> AccountSection(currentUser)
+                        // Sources section — only shows user-added sources; official sources work internally
                         "sources" -> TelegramSourcesSection(
                             officialSources = officialSources,
                             userSources = userSources,
                             onAddSource = viewModel::addUserSource,
-                            onRemoveSource = viewModel::removeUserSource
+                            onRemoveSource = viewModel::removeUserSource,
+                            joinedChats = joinedChats,
+                            isLoadingChats = isLoadingChats,
+                            onFetchChats = viewModel::fetchJoinedChats,
+                            onAddFromChats = viewModel::addUserSourcesFromChats
                         )
                         "player" -> PlayerSection(
                             autoPlay = autoPlay,
@@ -533,29 +607,33 @@ private fun TelegramSourcesSection(
     officialSources: List<com.trixsearch.hasikit.telegram.config.TelegramSource>,
     userSources: List<com.trixsearch.hasikit.telegram.config.TelegramSource>,
     onAddSource: (identifier: String, displayName: String) -> Unit,
-    onRemoveSource: (identifier: String) -> Unit
+    onRemoveSource: (identifier: String) -> Unit,
+    // Import from Telegram joined chats
+    joinedChats: List<SettingsViewModel.TelegramChatEntry>,
+    isLoadingChats: Boolean,
+    onFetchChats: () -> Unit,
+    onAddFromChats: (List<SettingsViewModel.TelegramChatEntry>) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     var newIdentifier by remember { mutableStateOf("") }
     var newDisplayName by remember { mutableStateOf("") }
+    // Multi-select state for import dialog — copy-on-write set, avoids SnapshotStateSet classpath issues
+    var selectedChats by remember { mutableStateOf(setOf<Long>()) }
 
-    SettingsGroup("Content Sources", Icons.Default.Subscriptions) {
-        // Official sources — always visible, cannot be removed
-        officialSources.forEach { source ->
+    SettingsGroup("My Sources", Icons.Default.Subscriptions) {
+        // Official sources work internally but are NOT displayed here
+        // They are always active in the background for content fetching
+
+        // User-added sources only
+        if (userSources.isEmpty()) {
             ListItem(
-                headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
-                supportingContent = { Text(source.identifier, style = MaterialTheme.typography.bodySmall) },
-                leadingContent = { Icon(Icons.Default.Verified, null, tint = MaterialTheme.colorScheme.primary) },
-                trailingContent = {
-                    Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Text("Official", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
+                headlineContent = { Text("No sources added yet", style = MaterialTheme.typography.bodyMedium) },
+                supportingContent = { Text("Add channels or groups to see their content", style = MaterialTheme.typography.bodySmall) },
+                leadingContent = { Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             )
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        }
-        // User sources — only shown when ALLOW_USER_SOURCES is enabled
-        if (BuildConfig.ALLOW_USER_SOURCES) {
+        } else {
             userSources.forEach { source ->
                 ListItem(
                     headlineContent = { Text(source.displayName, fontWeight = FontWeight.Medium) },
@@ -569,21 +647,114 @@ private fun TelegramSourcesSection(
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
-            // Add source button — only shown when ALLOW_USER_SOURCES=true in local.properties
+        }
+
+        if (BuildConfig.ALLOW_USER_SOURCES) {
+            // Import from Telegram — fetch joined channels/groups for multi-select
+            SettingsClickRow(
+                icon = Icons.Default.ImportExport,
+                title = "Import from Telegram",
+                subtitle = "Add from your joined channels and groups",
+                onClick = {
+                    selectedChats = emptySet()
+                    onFetchChats()
+                    showImportDialog = true
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            // Manual add by identifier
             SettingsClickRow(
                 icon = Icons.Default.Add,
-                title = "Add My Source",
-                subtitle = "Add a public channel, private channel, or group",
+                title = "Add Manually",
+                subtitle = "Enter a channel username, ID, or invite link",
                 onClick = { showAddDialog = true }
             )
         }
     }
 
+    // Import from Telegram dialog — multi-select list of joined chats
+    if (showImportDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportDialog = false },
+            icon = { Icon(Icons.Default.ImportExport, null) },
+            title = { Text("Import from Telegram") },
+            text = {
+                Column {
+                    if (isLoadingChats) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text("Loading your chats…", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    } else if (joinedChats.isEmpty()) {
+                        Text("No channels or groups found.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(
+                            "Select channels/groups to add as sources:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                            items(joinedChats.size) { idx ->
+                                val chat = joinedChats[idx]
+                                val isChecked = chat.chatId in selectedChats
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            // Copy-on-write toggle
+                                            selectedChats = if (isChecked) selectedChats - chat.chatId else selectedChats + chat.chatId
+                                        }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = {
+                                            // Copy-on-write toggle
+                                            selectedChats = if (it) selectedChats + chat.chatId else selectedChats - chat.chatId
+                                        }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(chat.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                        Text(chat.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toAdd = joinedChats.filter { it.chatId in selectedChats }
+                        onAddFromChats(toAdd)
+                        showImportDialog = false
+                    },
+                    enabled = selectedChats.isNotEmpty() && !isLoadingChats
+                ) {
+                    // Use local val to avoid size() parse ambiguity in string template
+                    val selSize = selectedChats.size
+                    val addLabel = if (selectedChats.isEmpty()) "Add" else "Add ($selSize)"
+                    Text(addLabel)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showImportDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Manual add dialog
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { showAddDialog = false; newIdentifier = ""; newDisplayName = "" },
             icon = { Icon(Icons.Default.Add, null) },
-            title = { Text("Add Source") },
+            title = { Text("Add Source Manually") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -858,7 +1029,7 @@ private fun StorageSection(
     onClearAll: () -> Unit
 ) {
     SettingsGroup("Storage", Icons.Default.Storage) {
-        SettingsInfoRow(Icons.Default.VideoFile, "Downloaded Videos", "$downloadCount file${if (downloadCount != 1) "s" else ""}")
+        SettingsInfoRow(Icons.Default.VideoFile, "Downloaded Videos", "$downloadCount file" + if (downloadCount != 1) "s" else "")
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         SettingsInfoRow(Icons.Default.Download, "Downloads Used", formatBytes(storageUsed))
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

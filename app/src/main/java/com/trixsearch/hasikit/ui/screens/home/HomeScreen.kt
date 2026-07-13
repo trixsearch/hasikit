@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -96,6 +97,7 @@ fun HomeScreen(
                     // Status Bar Top Padding — windowInsetsPadding handles the status bar height automatically
                     .windowInsetsPadding(WindowInsets.statusBars)
                     // Title Top Padding — set to 4.dp top to keep title close to status bar
+                    // Scaffold Top Padding — controlled here; adjust vertical value to change spacing
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -323,7 +325,18 @@ fun RecentCard(video: Video, onClick: () -> Unit) {
             // Pass localPath for video frame fallback when Telegram thumbnail is absent
             VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxWidth().height(95.dp))
             Box(modifier = Modifier.fillMaxWidth().height(95.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
-            Text(video.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
+            // Marquee title — auto-scrolls right-to-left when title overflows card width
+            Text(
+                video.title,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
+            )
         }
     }
 }
@@ -337,7 +350,18 @@ fun ContinueWatchingCard(video: Video, progress: WatchProgress, onClick: () -> U
             VideoThumbnail(url = video.thumbnail, localVideoPath = video.localPath, modifier = Modifier.fillMaxWidth().height(108.dp))
             Box(modifier = Modifier.fillMaxWidth().height(108.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))))
             Icon(Icons.Default.PlayCircle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.Center).size(36.dp))
-            Text(video.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, end = 6.dp, bottom = 10.dp))
+            // Marquee title — auto-scrolls right-to-left when title overflows card width
+            Text(
+                video.title,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 6.dp, end = 6.dp, bottom = 10.dp)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
+            )
             LinearProgressIndicator(progress = { percent }, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp), color = Color.Red, trackColor = Color.Gray.copy(alpha = 0.4f))
         }
     }
@@ -357,7 +381,18 @@ fun DownloadedCard(video: Video, onClick: () -> Unit) {
                     Text("Saved", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Text(video.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
+            // Marquee title — auto-scrolls right-to-left when title overflows card width
+            Text(
+                video.title,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
+            )
         }
     }
 }
@@ -409,7 +444,14 @@ fun HorizontalVideoCard(
                 }
             }
             Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // Marquee title — auto-scrolls right-to-left instead of truncating with ellipsis
+                Text(
+                    video.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (video.sourceLabel.isNotBlank()) Text(video.sourceLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     if (video.duration > 0L) Text(formatTime(video.duration), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

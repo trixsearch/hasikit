@@ -1,15 +1,67 @@
 package com.trixsearch.hasikit.ui.screens.library
 
 import android.util.Log
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,11 +85,30 @@ import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.download.HasikitDownloadManager
 import com.trixsearch.hasikit.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "LibraryScreen"
+
+// Library sort options
+enum class LibrarySortOrder(val label: String) {
+    NAME_AZ("Name A\u2013Z"),
+    NAME_ZA("Name Z\u2013A"),
+    NEWEST_FIRST("Newest First"),
+    OLDEST_FIRST("Oldest First"),
+    LARGEST_SIZE("Largest Size"),
+    SMALLEST_SIZE("Smallest Size"),
+    LONGEST_DURATION("Longest Duration"),
+    SHORTEST_DURATION("Shortest Duration"),
+    CHANNEL_NAME("Channel Name"),
+    DOWNLOADED("Downloaded"),
+    DOWNLOADING("Downloading"),
+    PAUSED("Paused")
+}
 
 data class LibraryItem(
     val video: Video,
@@ -102,7 +173,6 @@ class LibraryViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     navController: NavController,
@@ -111,12 +181,37 @@ fun LibraryScreen(
     val downloadedItems by viewModel.downloadedItems.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    // Library sort order — default newest first
+    var sortOrder by remember { mutableStateOf(LibrarySortOrder.NEWEST_FIRST) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    // Bulk selection mode
+    var selectionMode by remember { mutableStateOf(false) }
+    // Use mutableStateOf(setOf()) — copy-on-write set, avoids SnapshotStateSet classpath issues
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
 
-    val filteredDownloaded = remember(downloadedItems, searchQuery) {
-        if (searchQuery.isBlank()) downloadedItems
-        else downloadedItems.filter {
-            it.video.title.contains(searchQuery, ignoreCase = true) ||
-                it.video.localPath?.contains(searchQuery, ignoreCase = true) == true
+    // Apply sort to downloaded items
+    val sortedDownloaded = remember(downloadedItems, sortOrder) {
+        when (sortOrder) {
+            LibrarySortOrder.NAME_AZ -> downloadedItems.sortedBy { it.video.title.lowercase() }
+            LibrarySortOrder.NAME_ZA -> downloadedItems.sortedByDescending { it.video.title.lowercase() }
+            LibrarySortOrder.NEWEST_FIRST -> downloadedItems
+            LibrarySortOrder.OLDEST_FIRST -> downloadedItems.reversed()
+            LibrarySortOrder.LARGEST_SIZE -> downloadedItems.sortedByDescending { it.video.size }
+            LibrarySortOrder.SMALLEST_SIZE -> downloadedItems.sortedBy { it.video.size }
+            LibrarySortOrder.LONGEST_DURATION -> downloadedItems.sortedByDescending { it.video.duration }
+            LibrarySortOrder.SHORTEST_DURATION -> downloadedItems.sortedBy { it.video.duration }
+            LibrarySortOrder.CHANNEL_NAME -> downloadedItems.sortedBy { it.video.sourceLabel.lowercase() }
+            LibrarySortOrder.DOWNLOADED -> downloadedItems.filter { it.task?.state == DownloadState.COMPLETED || it.video.isDownloaded }
+            LibrarySortOrder.DOWNLOADING -> downloadedItems.filter { it.task?.state == DownloadState.DOWNLOADING }
+            LibrarySortOrder.PAUSED -> downloadedItems.filter { it.task?.state == DownloadState.PAUSED }
+        }
+    }
+
+    val filteredDownloaded = remember(sortedDownloaded, searchQuery) {
+        if (searchQuery.isBlank()) sortedDownloaded
+        else sortedDownloaded.filter { item ->
+            item.video.title.contains(searchQuery, ignoreCase = true) ||
+                item.video.localPath?.contains(searchQuery, ignoreCase = true) == true
         }
     }
 
@@ -126,7 +221,6 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    // Title Top Padding — reduce to tighten header spacing
                     .padding(horizontal = 16.dp, vertical = 0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -138,13 +232,95 @@ fun LibraryScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Library", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    // Sort button
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, "Sort", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            Text(
+                                "Sort by",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                            LibrarySortOrder.entries.forEach { order ->
+                                // Explicitly typed composable lambda to fix type inference
+                                val checkIcon: (@Composable () -> Unit)? = if (sortOrder == order) {
+                                    @Composable { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                                } else null
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            order.label,
+                                            fontWeight = if (sortOrder == order) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (sortOrder == order) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    leadingIcon = checkIcon,
+                                    onClick = { sortOrder = order; showSortMenu = false }
+                                )
+                            }
+                        }
+                    }
+                    // Bulk select toggle
+                    IconButton(onClick = {
+                        selectionMode = !selectionMode
+                        if (!selectionMode) selectedIds = emptySet()
+                    }) {
+                        Icon(
+                            if (selectionMode) Icons.Default.CheckCircle else Icons.Default.CheckBoxOutlineBlank,
+                            "Select",
+                            tint = if (selectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                // Bulk action bar — shown when items are selected
+                if (selectionMode && selectedIds.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Use local val to avoid size() parse ambiguity in string template
+                        val selCount = selectedIds.size
+                        Text("$selCount selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.weight(1f))
+                        // Play first selected item
+                        TextButton(onClick = {
+                            val first = filteredDownloaded.firstOrNull { it.video.id in selectedIds }
+                            first?.let { navController.navigate(Screen.Player.createRoute(it.video.id)) }
+                            selectionMode = false; selectedIds = emptySet()
+                        }) { Text("Play") }
+                        // Resume selected downloads
+                        TextButton(onClick = {
+                            selectedIds.forEach { id ->
+                                filteredDownloaded.find { it.video.id == id }?.let { viewModel.resumeDownload(it.video) }
+                            }
+                            selectionMode = false; selectedIds = emptySet()
+                        }) { Text("Resume") }
+                        // Pause selected downloads
+                        TextButton(onClick = {
+                            selectedIds.forEach { id -> viewModel.pauseDownload(id) }
+                            selectionMode = false; selectedIds = emptySet()
+                        }) { Text("Pause") }
+                        // Delete selected
+                        TextButton(
+                            onClick = {
+                                selectedIds.forEach { id -> viewModel.deleteDownload(id) }
+                                selectionMode = false; selectedIds = emptySet()
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    }
                 }
                 if (downloadedItems.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search downloads…", style = MaterialTheme.typography.bodyMedium) },
+                        placeholder = { Text("Search downloads\u2026", style = MaterialTheme.typography.bodyMedium) },
                         leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp)) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
@@ -169,9 +345,7 @@ fun LibraryScreen(
             EmptyLibraryState(modifier = Modifier.padding(padding))
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
+                modifier = Modifier.padding(padding).fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 if (activeDownloads.isNotEmpty()) {
@@ -184,18 +358,32 @@ fun LibraryScreen(
                         )
                     }
                 }
-
                 if (filteredDownloaded.isNotEmpty()) {
-                    item { SectionLabel("Downloaded (${filteredDownloaded.size})", Icons.Default.DownloadDone) }
+                    // Use local val to avoid size() parse ambiguity in string template
+                    val dlCount = filteredDownloaded.size
+                    item { SectionLabel("Downloaded ($dlCount)", Icons.Default.DownloadDone) }
                     items(filteredDownloaded, key = { it.video.id }) { item ->
+                        val isSelected = item.video.id in selectedIds
                         DownloadedVideoCard(
                             item = item,
+                            isSelected = isSelected,
+                            selectionMode = selectionMode,
                             onPlay = {
-                                Log.d(TAG, "Play offline videoId=${item.video.id} path=${item.video.localPath}")
-                                navController.navigate(Screen.Player.createRoute(item.video.id))
+                                if (selectionMode) {
+                                    // Copy-on-write toggle for set membership
+                                    selectedIds = if (isSelected) selectedIds - item.video.id else selectedIds + item.video.id
+                                } else {
+                                    Log.d(TAG, "Play offline videoId=${item.video.id}")
+                                    navController.navigate(Screen.Player.createRoute(item.video.id))
+                                }
                             },
                             onDelete = { viewModel.deleteDownload(item.video.id) },
-                            onRedownload = { viewModel.retryDownload(item.video) }
+                            onRedownload = { viewModel.retryDownload(item.video) },
+                            onLongPress = {
+                                selectionMode = true
+                                // Copy-on-write add
+                                selectedIds = selectedIds + item.video.id
+                            }
                         )
                     }
                 } else if (searchQuery.isNotBlank()) {
@@ -257,24 +445,18 @@ private fun EmptyLibraryState(modifier: Modifier = Modifier) {
 fun ActiveDownloadCard(item: LibraryItem, onPause: () -> Unit, onResume: () -> Unit) {
     val isPaused = item.task?.state == DownloadState.PAUSED
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(
-            modifier = Modifier
-                .height(80.dp)
-                .padding(12.dp),
+            modifier = Modifier.height(80.dp).padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
                 model = item.video.thumbnail,
                 contentDescription = null,
-                modifier = Modifier
-                    .size(width = 80.dp, height = 56.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Crop
             )
             Spacer(Modifier.width(12.dp))
@@ -295,17 +477,16 @@ fun ActiveDownloadCard(item: LibraryItem, onPause: () -> Unit, onResume: () -> U
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
+                val progressPct = (progress * 100).toInt()
+                val statusText = if (isPaused) "Paused" else "Downloading\u2026"
                 Text(
-                    "${(progress * 100).toInt()}% — ${if (isPaused) "Paused" else "Downloading…"}",
+                    "$progressPct% \u2014 $statusText",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = { if (isPaused) onResume() else onPause() },
-                modifier = Modifier.size(40.dp)
-            ) {
+            IconButton(onClick = { if (isPaused) onResume() else onPause() }, modifier = Modifier.size(40.dp)) {
                 Icon(
                     if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
                     contentDescription = if (isPaused) "Resume" else "Pause",
@@ -317,15 +498,18 @@ fun ActiveDownloadCard(item: LibraryItem, onPause: () -> Unit, onResume: () -> U
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DownloadedVideoCard(
     item: LibraryItem,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
-    onRedownload: () -> Unit
+    onRedownload: () -> Unit,
+    isSelected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongPress: (() -> Unit)? = null
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
-    // Stable progress value — never drives layout changes
     val watchPct = remember(item.watchProgress) {
         val wp = item.watchProgress
         if (wp != null && wp.duration > 0) wp.lastPosition.toFloat() / wp.duration else 0f
@@ -335,63 +519,41 @@ fun DownloadedVideoCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            // Entire card is clickable to open player
-            .clickable { onPlay() },
+            .combinedClickable(onClick = onPlay, onLongClick = { onLongPress?.invoke() }),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(2.dp),
+        // Highlight selected items in bulk mode
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        )
     ) {
-        // Fixed height row — never changes regardless of watch progress
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(88.dp)
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth().height(88.dp).padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail — fixed size, progress bar overlaid inside Box
-            Box(
-                modifier = Modifier
-                    .size(width = 96.dp, height = 64.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            ) {
+            Box(modifier = Modifier.size(width = 96.dp, height = 64.dp).clip(RoundedCornerShape(8.dp))) {
                 AsyncImage(
                     model = item.video.thumbnail,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                // Downloaded badge — always visible
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(3.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(3.dp),
                     shape = RoundedCornerShape(4.dp),
                     color = Color(0xFF1DB954)
                 ) {
-                    Icon(
-                        Icons.Default.DownloadDone,
-                        null,
-                        tint = Color.White,
-                        modifier = Modifier.padding(3.dp).size(10.dp)
-                    )
+                    Icon(Icons.Default.DownloadDone, null, tint = Color.White, modifier = Modifier.padding(3.dp).size(10.dp))
                 }
-                // Progress bar — always rendered, just 0 width when no progress
                 LinearProgressIndicator(
                     progress = { watchPct },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(3.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
                     color = Color.Red,
                     trackColor = Color.Gray.copy(alpha = 0.3f)
                 )
             }
             Spacer(Modifier.width(12.dp))
-            // Text info — fixed layout, no conditional children
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(
                     item.video.title,
                     style = MaterialTheme.typography.titleSmall,
@@ -403,16 +565,11 @@ fun DownloadedVideoCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Storage, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(3.dp))
-                    Text(
-                        formatBytes(item.video.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    // Watch time — inline, no extra row
+                    Text(formatBytes(item.video.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     item.watchProgress?.let { wp ->
                         if (wp.duration > 0) {
                             Text(
-                                "  •  ${formatTime(wp.lastPosition)}/${formatTime(wp.duration)}",
+                                "  \u2022  ${formatTime(wp.lastPosition)}/${formatTime(wp.duration)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
@@ -421,11 +578,7 @@ fun DownloadedVideoCard(
                     }
                 }
             }
-            // Actions — fixed column, always same size
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 IconButton(onClick = onPlay, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 }
@@ -448,9 +601,7 @@ fun DownloadedVideoCard(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            }
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
         )
     }
 }

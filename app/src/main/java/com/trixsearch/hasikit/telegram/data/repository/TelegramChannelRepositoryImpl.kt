@@ -261,13 +261,18 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     ): Result<List<TelegramMedia>> {
         Log.d(TAG, "getChannelMedia chatId=$chatId offset=$offsetMessageId limit=$limit")
         return suspendCancellableCoroutine { cont ->
+            // TDLib GetChatHistory: fromMessageId=0 means start from newest message.
+            // offset=0 with limit=N returns the N most recent messages.
+            // For pagination: fromMessageId = oldest loaded messageId, offset=0 fetches older messages.
+            // Bug fix: when offsetMessageId=0 (initial load), use offset=0 to get latest N messages.
+            // When offsetMessageId>0 (pagination), use that id as cursor to get older messages.
             clientService.send(
                 TdApi.GetChatHistory(chatId, offsetMessageId, 0, limit, false)
             ) { result ->
                 when (result) {
                     is TdApi.Messages -> {
                         val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
-                        Log.d(TAG, "getChannelMedia total=${result.totalCount} loaded=${result.messages.size} media=${media.size}")
+                        Log.d(TAG, "getChannelMedia total=${result.totalCount} loaded=${result.messages.size} media=${media.size} offsetId=$offsetMessageId")
                         cont.resume(Result.success(media))
                     }
                     is TdApi.Error -> {
