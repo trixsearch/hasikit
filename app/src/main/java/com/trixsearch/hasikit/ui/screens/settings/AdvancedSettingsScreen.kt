@@ -58,12 +58,13 @@ fun AdvancedSettingsScreen(
             // Cache management group
             item {
                 SettingsGroup("Cache", Icons.Default.Storage) {
-                    // Clear app cache
+                    // Clear app cache — button enabled whenever cache exists; size shown in subtitle
                     ListItem(
                         headlineContent = { Text("Clear Cache", fontWeight = FontWeight.Medium) },
                         supportingContent = {
                             Text(
-                                if (cacheSize > 0) "Free up ${formatAdvBytes(cacheSize)}" else "Cache is empty",
+                                // FIX: always show calculated size; "No cache" only when truly 0 after refresh
+                                if (cacheSize > 0L) "Free up ${formatAdvBytes(cacheSize)}" else "No cache to clear",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         },
@@ -75,7 +76,8 @@ fun AdvancedSettingsScreen(
                             )
                         },
                         trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                        modifier = Modifier.clickable { if (cacheSize > 0) showClearCacheDialog = true }
+                        // FIX: always clickable so user can trigger a fresh size recalculation
+                        modifier = Modifier.clickable { showClearCacheDialog = true }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     // FIX #7 — Clear thumbnail cache only
@@ -194,13 +196,20 @@ fun AdvancedSettingsScreen(
         )
     }
 
-    // Clear cache confirmation dialog
+    // Clear cache confirmation dialog — always shown when user taps; size displayed from refreshed value
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
             icon = { Icon(Icons.Default.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Clear Cache") },
-            text = { Text("Delete ${formatAdvBytes(cacheSize)} of cached data? Downloaded videos are not affected.") },
+            text = {
+                Text(
+                    if (cacheSize > 0L)
+                        "Delete ${formatAdvBytes(cacheSize)} of cached data? Downloaded videos are not affected."
+                    else
+                        "Cache appears empty. Clear anyway to remove any residual temp files?"
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = { viewModel.clearCache(); showClearCacheDialog = false },
@@ -211,13 +220,13 @@ fun AdvancedSettingsScreen(
         )
     }
 
-    // Clear all storage confirmation dialog
+    // Clear all storage confirmation dialog — explicitly states session is preserved
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
             icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("WARNING", color = MaterialTheme.colorScheme.error) },
-            text = { Text("This will permanently delete all downloaded videos, cached media, and download metadata.\n\nThis action cannot be undone.") },
+            text = { Text("This will permanently delete all downloaded videos, cached media, and download metadata.\n\nYour Telegram login and settings will NOT be affected.\n\nThis action cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = { viewModel.clearAllStorage(); showClearAllDialog = false },

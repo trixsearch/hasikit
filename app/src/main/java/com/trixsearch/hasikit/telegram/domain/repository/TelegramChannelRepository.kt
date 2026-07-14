@@ -17,12 +17,14 @@ interface TelegramChannelRepository {
     /**
      * Load up to [limit] media messages from [chatId].
      * Pass [offsetMessageId] = 0 for the first page.
+     * Returns Pair(mediaList, rawMessageCount) — rawCount is used to determine hasMore
+     * so non-video messages don't prematurely stop pagination.
      */
     suspend fun getChannelMedia(
         chatId: Long,
         offsetMessageId: Long = 0,
         limit: Int = 50
-    ): Result<List<TelegramMedia>>
+    ): Result<Pair<List<TelegramMedia>, Int>>
 
     /**
      * Search the channel history by [query].

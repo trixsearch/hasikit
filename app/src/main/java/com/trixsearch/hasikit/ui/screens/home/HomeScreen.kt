@@ -37,6 +37,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.trixsearch.hasikit.domain.model.DownloadState
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
+import com.trixsearch.hasikit.ui.components.FastScrollerBox
 import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.theme.HasikitTheme
 
@@ -157,11 +158,13 @@ fun HomeScreen(
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize()
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
+            // Fast scroller wraps the LazyColumn so the thumb overlays on the right side
+            FastScrollerBox(listState = listState) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
                 // Initial loading
                 if (isLoading && videos.isEmpty()) {
                     item {
@@ -303,7 +306,8 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
+                } // end LazyColumn
+            } // end FastScrollerBox
         }
     }
 }

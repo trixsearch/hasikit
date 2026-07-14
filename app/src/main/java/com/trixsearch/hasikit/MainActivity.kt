@@ -30,7 +30,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.trixsearch.hasikit.player.HasikitPlayer
@@ -49,7 +48,9 @@ private const val TAG = "MainActivity"
 val Context.themeDataStore by preferencesDataStore(name = "hasikit_theme")
 val THEME_KEY = stringPreferencesKey("app_theme")
 
-// Routes where the bottom navigation bar should be hidden
+// Fix NavController crash: popBackStack with stale destination ID
+// Use Screen.Home.route as the explicit popUpTo target instead of findStartDestination().id
+// which resolves to a resource ID that may not exist in the back stack after navigation
 private val HIDE_BOTTOM_NAV_ROUTES = setOf(
     Screen.Auth.route,
     Screen.Player.route
@@ -128,7 +129,10 @@ class MainActivity : ComponentActivity() {
                                             ?.any { it.route == screen.route } == true,
                                         onClick = {
                                             navController.navigate(screen.route) {
-                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                // Use Home route string directly — findStartDestination().id
+                                                // returns a resource ID (0x78d52eb5) that is not always
+                                                // present in the back stack, causing the NavController crash
+                                                popUpTo(Screen.Home.route) {
                                                     saveState = true
                                                 }
                                                 launchSingleTop = true

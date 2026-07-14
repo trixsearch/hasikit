@@ -184,6 +184,13 @@ class SettingsViewModel @Inject constructor(
                 if (path.isNotBlank()) downloadManager.customDownloadPath.value = path
             }
         }
+        // FIX: Sync galleryVisible to download manager so copyToMoviesDir uses correct storage logic
+        viewModelScope.launch {
+            galleryVisible.collect { visible ->
+                downloadManager.galleryVisible.value = visible
+                Log.d(TAG, "galleryVisible synced to downloadManager: $visible")
+            }
+        }
     }
 
     fun setGalleryVisible(v: Boolean) {
@@ -200,14 +207,36 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // FIX: scanDownloadedFilesIntoGallery — scan both default Movies dir and custom SAF folder
     private fun scanDownloadedFilesIntoGallery() {
         viewModelScope.launch(Dispatchers.IO) {
-            val dir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return@launch
-            val files = dir.listFiles()?.filter { it.isFile } ?: return@launch
-            if (files.isEmpty()) return@launch
-            val paths = files.map { it.absolutePath }.toTypedArray()
-            MediaScannerConnection.scanFile(context, paths, null) { path, _ ->
-                Log.d(TAG, "MediaScanner scanned: $path")
+            val paths = mutableListOf<String>()
+            // Scan default app Movies dir
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { dir ->
+                dir.listFiles()?.filter { it.isFile }?.forEach { paths.add(it.absolutePath) }
+            }
+            // Also scan custom download folder if set (SAF path → resolve to real path if possible)
+            val customUriStr = downloadManager.customDownloadPath.value
+            if (customUriStr.isNotBlank()) {
+                try {
+                    val uri = android.net.Uri.parse(customUriStr)
+                    val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                    docDir?.listFiles()?.filter { it.isFile }?.forEach { doc ->
+                        // DocumentFile URI — pass as content URI string for MediaScanner
+                        doc.uri.path?.let { paths.add(it) }
+                    }
+                    Log.d(TAG, "scanDownloadedFilesIntoGallery — custom folder scanned uri=$customUriStr")
+                } catch (e: Exception) {
+                    Log.w(TAG, "scanDownloadedFilesIntoGallery — custom folder scan failed", e)
+                }
+            }
+            if (paths.isEmpty()) {
+                Log.d(TAG, "scanDownloadedFilesIntoGallery — no files to scan")
+                return@launch
+            }
+            Log.d(TAG, "scanDownloadedFilesIntoGallery — scanning ${paths.size} files")
+            MediaScannerConnection.scanFile(context, paths.toTypedArray(), null) { path, uri ->
+                Log.d(TAG, "MediaScanner scanned: $path uri=$uri")
             }
         }
     }
@@ -286,53 +315,83 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // FIX #7 — Clear All Storage: downloads + cache + Telegram cached media + DB records
+    // FIX: clearAllStorage — delete downloads + caches ONLY; DO NOT touch TDLib session/db so user stays logged in
     fun clearAllStorage() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // FIX #9 — Delete from selected download folder first
+                // Delete files from custom SAF download folder if one is set
                 val customUriStr = downloadManager.customDownloadPath.value
                 if (customUriStr.isNotBlank()) {
                     try {
                         val uri = android.net.Uri.parse(customUriStr)
                         val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
                         docFile?.listFiles()?.forEach { it.delete() }
-                        Log.d(TAG, "FIX #9 — Deleted files from custom download folder")
+                        Log.d(TAG, "clearAllStorage — deleted files from custom download folder uri=$customUriStr")
                     } catch (e: Exception) {
-                        Log.w(TAG, "FIX #9 — Could not delete from custom folder", e)
+                        Log.w(TAG, "clearAllStorage — could not delete from custom folder", e)
                     }
                 }
-                // Delete all downloaded files from default app Movies dir
+                // Delete all downloaded video files from default app Movies dir
                 context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { dir ->
                     dir.listFiles()?.forEach { file ->
                         val deleted = file.delete()
-                        Log.d(TAG, "FIX #7 — Delete file ${file.name}: $deleted")
+                        Log.d(TAG, "clearAllStorage — deleted ${file.name}: $deleted")
                     }
-                    // Recreate dir so downloads can resume immediately
                     dir.mkdirs()
                 }
-                // Delete Telegram cached media from external files dir
+                // FIX: DO NOT delete TDLib session db — only delete TDLib temp/cache subdirs
+                // Deleting the full tdlib dir would log the user out, which is incorrect behavior
+                val tdlibTemp = java.io.File(context.filesDir, "tdlib/temp")
+                if (tdlibTemp.exists()) {
+                    val deleted = tdlibTemp.deleteRecursively()
+                    Log.d(TAG, "clearAllStorage — deleted TDLib temp dir: $deleted")
+                }
+                // Delete Telegram cached media from external files dir (excluding Movies subdir)
                 context.getExternalFilesDir(null)?.let { dir ->
                     dir.listFiles()?.filter { it.name != "Movies" }?.forEach { it.deleteRecursively() }
+                    Log.d(TAG, "clearAllStorage — cleared external files (non-Movies)")
                 }
-                // Clear all cache dirs
+                // Delete thumbnail cache (Coil image cache)
+                java.io.File(context.cacheDir, "image_cache").takeIf { it.exists() }?.deleteRecursively()
+                context.externalCacheDir?.let { java.io.File(it, "image_cache").takeIf { f -> f.exists() }?.deleteRecursively() }
+                // Delete player cache (ExoPlayer / Media3 buffer)
+                java.io.File(context.cacheDir, "exoplayer").takeIf { it.exists() }?.deleteRecursively()
+                java.io.File(context.cacheDir, "media3").takeIf { it.exists() }?.deleteRecursively()
+                // Delete all remaining internal cache (temp files, etc.)
                 context.cacheDir.deleteRecursively()
                 context.cacheDir.mkdirs()
                 context.externalCacheDir?.deleteRecursively()
                 context.externalCacheDir?.mkdirs()
-                // Clear all DB records (downloads, videos, watch progress)
+                // Clear DB download records, video metadata, watch progress — session is NOT touched
                 repository.clearAllStorage()
-                Log.d(TAG, "FIX #7 — All storage cleared")
+                Log.d(TAG, "clearAllStorage — complete; Telegram session preserved")
                 refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "FIX #7 — Failed to clear all storage", e)
+                Log.e(TAG, "clearAllStorage — failed", e)
             }
         }
     }
 
+    // FIX: calcCacheSize — scan ALL cache locations: internal, external, TDLib temp, Coil, ExoPlayer
     private fun calcCacheSize(): Long {
-        var size = context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        context.externalCacheDir?.walkTopDown()?.filter { it.isFile }?.forEach { size += it.length() }
+        var size = 0L
+        // Internal app cache dir (Coil thumbnails, ExoPlayer buffers, temp files)
+        size += context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        Log.d(TAG, "calcCacheSize internal cacheDir=${context.cacheDir.absolutePath} size=$size")
+        // External cache dir (additional thumbnails, temp)
+        context.externalCacheDir?.let { ext ->
+            val extSize = ext.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            size += extSize
+            Log.d(TAG, "calcCacheSize externalCacheDir=${ext.absolutePath} extSize=$extSize")
+        }
+        // TDLib temp files stored inside filesDir/tdlib (not the session db, just temp media)
+        val tdlibTemp = java.io.File(context.filesDir, "tdlib/temp")
+        if (tdlibTemp.exists()) {
+            val tdSize = tdlibTemp.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            size += tdSize
+            Log.d(TAG, "calcCacheSize tdlibTemp=${tdlibTemp.absolutePath} tdSize=$tdSize")
+        }
+        Log.d(TAG, "calcCacheSize total=$size bytes")
         return size
     }
 

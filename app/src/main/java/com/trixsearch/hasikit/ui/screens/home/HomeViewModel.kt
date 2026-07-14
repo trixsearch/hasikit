@@ -23,11 +23,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
-// Initial fetch size — load minimum 25 videos on first open
 private const val PAGE_SIZE = 25
-// Infinite Scroll Threshold — trigger next page fetch when this many items remain unseen
 private const val PREFETCH_THRESHOLD = 10
-// Auto Refresh Interval — seconds between background checks for new channel content; 0 = disabled
 private const val AUTO_REFRESH_SECONDS = 60L
 
 data class SourcePage(
@@ -60,10 +57,9 @@ class HomeViewModel @Inject constructor(
     private val _noAccessMessage = MutableStateFlow<String?>(null)
     val noAccessMessage: StateFlow<String?> = _noAccessMessage
 
-    // Reactive thumbnail cache: fileId -> local file path
     private val _thumbnailCache = MutableStateFlow<Map<Long, String?>>(emptyMap())
 
-    private val _selectedSourceFilter = MutableStateFlow<String?>(null) // null = All Sources
+    private val _selectedSourceFilter = MutableStateFlow<String?>(null)
     val selectedSourceFilter: StateFlow<String?> = _selectedSourceFilter
 
     val availableSources: StateFlow<List<TelegramSource>> = _sourcePages
@@ -74,7 +70,6 @@ class HomeViewModel @Inject constructor(
         _selectedSourceFilter.value = sourceDisplayName
     }
 
-    // Expose download tasks so HomeScreen can read per-video download state
     val downloadTasks = downloadManager.downloadTasks
 
     val continueWatching: StateFlow<List<Pair<Video, WatchProgress>>> =
@@ -101,16 +96,12 @@ class HomeViewModel @Inject constructor(
         val downloadTasks = pair.second
         val dbById = dbVideos.associateBy { it.id }
         val filteredPages = if (sourceFilter == null) pages else pages.filter { it.source.displayName == sourceFilter }
-        // Duplicate content filter — deduplicate by fileId, then by (title+size) for cross-source duplicates
-        // Prefer newest source (first occurrence wins since pages are ordered newest-first)
         val seenFileIds = mutableSetOf<Long>()
         val seenTitleSize = mutableSetOf<String>()
         filteredPages.flatMap { page ->
             page.media.mapNotNull { media ->
                 val id = "${media.channelId}_${media.messageId}"
-                // Deduplicate by Telegram file ID (exact same file)
                 if (media.fileId != 0L && !seenFileIds.add(media.fileId)) return@mapNotNull null
-                // Deduplicate by title+size (likely same content from different sources)
                 val titleSizeKey = "${media.title.lowercase().trim()}_${media.size}"
                 if (!seenTitleSize.add(titleSizeKey)) return@mapNotNull null
                 val db = dbById[id]
@@ -135,35 +126,36 @@ class HomeViewModel @Inject constructor(
                     isDownloaded = isDownloaded,
                     downloadProgress = downloadProgress,
                     sourceLabel = page.source.displayName,
-                    // Streamability logic — passed from TelegramMedia
                     isStreamable = media.isStreamable
                 )
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Guard against concurrent loadAllSources calls — auth collect and userSources collect
+    // can both fire simultaneously on startup causing duplicate getChannelMedia requests
+    @Volatile private var isLoadingAllSources = false
+
     init {
         viewModelScope.launch {
             authRepository.authState.collect { state ->
-                // Only load sources when fully authenticated, not during Loading state
-                if (state is AuthState.Authenticated && _sourcePages.value.isEmpty()) {
+                if (state is AuthState.Authenticated && _sourcePages.value.isEmpty() && !isLoadingAllSources) {
                     loadAllSources()
-                    // Auto Refresh Interval — start background polling after initial load
                     if (AUTO_REFRESH_SECONDS > 0) startAutoRefresh()
                 }
             }
         }
-        // Reload only when user sources actually change (not on every resume)
+        // Reload when user sources change, but only if already authenticated
         viewModelScope.launch {
             sourceConfig.userSourcesFlow.drop(1).collect {
-                if (authRepository.authState.value is AuthState.Authenticated) {
+                if (authRepository.authState.value is AuthState.Authenticated && !isLoadingAllSources) {
                     loadAllSources()
                 }
             }
         }
     }
 
-    // Auto Refresh Interval — polls for new content at the top without disturbing scroll position
+    // Auto-refresh: polls for new content at the top without disturbing scroll position
     private fun startAutoRefresh() {
         viewModelScope.launch {
             while (true) {
@@ -175,21 +167,18 @@ class HomeViewModel @Inject constructor(
                     addAll(sourceConfig.officialSources)
                     addAll(sourceConfig.userSourcesFlow.first())
                 }
-                // Check each source for new messages (offset 0 = latest)
                 val updatedPages = currentPages.map { existingPage ->
-                    val source = allSources.find { it.displayName == existingPage.source.displayName } ?: return@map existingPage
-                    val freshPage = channelRepository.getChannelMedia(existingPage.chatId, 0L, PAGE_SIZE).getOrNull()
+                    val source = allSources.find { it.displayName == existingPage.source.displayName }
                         ?: return@map existingPage
-                    // Identify new items not already in the existing list
+                    val freshPage = channelRepository.getChannelMedia(existingPage.chatId, 0L, PAGE_SIZE)
+                        .getOrNull()?.first ?: return@map existingPage
                     val existingIds = existingPage.media.map { it.messageId }.toSet()
                     val newItems = freshPage.filter { it.messageId !in existingIds }
                     if (newItems.isEmpty()) return@map existingPage
                     Log.i(TAG, "autoRefresh: ${newItems.size} new items for source=${source.displayName}")
-                    // Insert new items at top, preserve existing scroll content
                     existingPage.copy(media = newItems + existingPage.media)
                 }
                 _sourcePages.value = updatedPages
-                // Fetch thumbnails for any newly inserted items
                 fetchThumbnails(updatedPages.flatMap { it.media })
             }
         }
@@ -197,6 +186,8 @@ class HomeViewModel @Inject constructor(
 
     private fun loadAllSources() {
         viewModelScope.launch {
+            if (isLoadingAllSources) return@launch
+            isLoadingAllSources = true
             _isLoading.value = true
             _error.value = null
             _noAccessMessage.value = null
@@ -225,81 +216,75 @@ class HomeViewModel @Inject constructor(
                 _noAccessMessage.value = "You currently do not have access to any Hasikit content sources.\n\nPlease contact:\n@hasikit_m_bot"
             } else {
                 _sourcePages.value = resolvedPages
-                // Fetch thumbnails in background
                 fetchThumbnails(resolvedPages.flatMap { it.media })
             }
 
             _isLoading.value = false
+            isLoadingAllSources = false
         }
     }
 
     private suspend fun loadPage(source: TelegramSource, chatId: Long, reset: Boolean): SourcePage? {
         val existing = if (reset) null else _sourcePages.value.find { it.chatId == chatId }
-        // FIX #4 — Pagination cursor: use the oldest (minimum) messageId loaded so far as the offset.
-        // TDLib GetChatHistory fetches messages OLDER than fromMessageId when offset=0.
-        // On reset (initial load), offsetId=0 means start from the newest message.
         val offsetId = if (reset) 0L else existing?.lastMessageId ?: 0L
         if (existing != null && !existing.hasMore && !reset) {
-            Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' hasMore=false, skipping")
+            Log.d(TAG, "loadPage '${source.displayName}' hasMore=false, skipping")
             return existing
         }
-        Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' chatId=$chatId offsetId=$offsetId reset=$reset")
+        Log.d(TAG, "loadPage '${source.displayName}' chatId=$chatId offsetId=$offsetId reset=$reset")
 
         return channelRepository.getChannelMedia(chatId, offsetId, PAGE_SIZE)
             .getOrNull()
-            ?.let { page ->
+            ?.let { (page, rawCount) ->
                 val allMedia = if (reset) page else (existing?.media ?: emptyList()) + page
-                // FIX #4 — Use the minimum messageId as the next pagination cursor (oldest message loaded)
                 val oldestMessageId = allMedia.minOfOrNull { it.messageId } ?: offsetId
-                Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' fetched=${page.size} total=${allMedia.size} oldestMsgId=$oldestMessageId hasMore=${page.size >= PAGE_SIZE}")
+                // hasMore based on rawCount so non-video messages don't prematurely stop pagination
+                val hasMore = rawCount >= PAGE_SIZE
+                Log.d(TAG, "loadPage '${source.displayName}' fetched=${page.size} raw=$rawCount total=${allMedia.size} oldestMsgId=$oldestMessageId hasMore=$hasMore")
                 SourcePage(
                     source = source,
                     chatId = chatId,
                     media = allMedia,
                     lastMessageId = oldestMessageId,
-                    hasMore = page.size >= PAGE_SIZE
+                    hasMore = hasMore
                 )
             }
     }
 
-    // Expose prefetch threshold so HomeScreen can trigger loadMore at the right scroll position
     val prefetchThreshold: Int get() = PREFETCH_THRESHOLD
 
-    // FIX #4 — Pagination: log cursor and loaded counts for diagnosis
     fun loadMore() {
         if (_isLoadingMore.value) return
         val pages = _sourcePages.value
-        // FIX #4 — Log current state before deciding whether to load more
         val totalLoaded = pages.sumOf { it.media.size }
         val hasMoreAny = pages.any { it.hasMore }
-        Log.d(TAG, "FIX #4 — loadMore called: totalLoaded=$totalLoaded hasMore=$hasMoreAny pages=${pages.size}")
+        Log.d(TAG, "loadMore called: totalLoaded=$totalLoaded hasMore=$hasMoreAny pages=${pages.size}")
         pages.forEach { page ->
-            Log.d(TAG, "FIX #4 —   source='${page.source.displayName}' loaded=${page.media.size} lastMessageId=${page.lastMessageId} hasMore=${page.hasMore}")
+            Log.d(TAG, "  source='${page.source.displayName}' loaded=${page.media.size} lastMessageId=${page.lastMessageId} hasMore=${page.hasMore}")
         }
         if (!hasMoreAny) {
-            Log.d(TAG, "FIX #4 — loadMore: no more pages available, skipping")
+            Log.d(TAG, "loadMore: no more pages available, skipping")
             return
         }
         viewModelScope.launch {
             _isLoadingMore.value = true
             val updated = pages.map { page ->
                 if (!page.hasMore) return@map page
-                // FIX #4 — Log the cursor being used for this page fetch
-                Log.d(TAG, "FIX #4 — Fetching next page for '${page.source.displayName}' cursor=${page.lastMessageId}")
+                Log.d(TAG, "Fetching next page for '${page.source.displayName}' cursor=${page.lastMessageId}")
                 val result = loadPage(page.source, page.chatId, reset = false) ?: page
-                Log.d(TAG, "FIX #4 — After fetch '${page.source.displayName}': loaded=${result.media.size} newCursor=${result.lastMessageId} hasMore=${result.hasMore}")
+                Log.d(TAG, "After fetch '${page.source.displayName}': loaded=${result.media.size} newCursor=${result.lastMessageId} hasMore=${result.hasMore}")
                 result
             }
             _sourcePages.value = updated
             val newTotal = updated.sumOf { it.media.size }
-            Log.d(TAG, "FIX #4 — loadMore complete: totalLoaded=$newTotal")
-            // Automatically fetch thumbnails for all newly loaded items — no manual refresh needed
+            Log.d(TAG, "loadMore complete: totalLoaded=$newTotal")
             fetchThumbnails(updated.flatMap { it.media })
             _isLoadingMore.value = false
         }
     }
 
     fun refresh() {
+        isLoadingAllSources = false
         _sourcePages.value = emptyList()
         loadAllSources()
     }
@@ -312,7 +297,6 @@ class HomeViewModel @Inject constructor(
                 .forEach { media ->
                     val fileId = media.thumbnailFileId ?: return@forEach
                     val path = channelRepository.downloadThumbnail(fileId)
-                    // Emit new map copy — triggers reactive recomposition immediately
                     _thumbnailCache.value = _thumbnailCache.value + (fileId to path)
                 }
         }
@@ -328,13 +312,11 @@ class HomeViewModel @Inject constructor(
         downloadManager.deleteDownload(videoId)
     }
 
-    // Added pause download from home screen
     fun pauseDownload(videoId: String) {
         Log.d(TAG, "pauseDownload videoId=$videoId")
         downloadManager.pauseDownload(videoId)
     }
 
-    // Added resume download from home screen
     fun resumeDownload(videoId: String) {
         val video = videos.value.find { it.id == videoId } ?: return
         Log.d(TAG, "resumeDownload videoId=$videoId")

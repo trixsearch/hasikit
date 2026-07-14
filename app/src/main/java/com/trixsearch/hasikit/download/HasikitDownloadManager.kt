@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.download
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
@@ -202,37 +203,109 @@ class HasikitDownloadManager @Inject constructor(
     /** Updated by SettingsViewModel when user picks a custom folder */
     val customDownloadPath = MutableStateFlow("")
 
+    // FIX: galleryVisible flag — synced from SettingsViewModel so download manager can notify MediaScanner
+    val galleryVisible = MutableStateFlow(false)
+
+    /**
+     * FIX: Download location logic:
+     *   galleryVisible=OFF  → private app storage (getExternalFilesDir/Movies)
+     *   galleryVisible=ON + customPath set  → write to SAF folder via streams, notify MediaScanner
+     *   galleryVisible=ON + no customPath   → write to Download/Hasikit/ public dir, notify MediaScanner
+     */
     private fun copyToMoviesDir(sourcePath: String, title: String, videoId: String): String {
         val src = File(sourcePath)
-        if (!src.exists()) return sourcePath
+        if (!src.exists()) {
+            Log.w(TAG, "copyToMoviesDir — source file not found: $sourcePath")
+            return sourcePath
+        }
+        // Preserve original file extension from source path
         val ext = sourcePath.substringAfterLast('.', "mp4")
         val safeId = videoId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(30)
         val safeTitle = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(60)
+        val fileName = "${safeTitle}_${safeId}.$ext"
         val customUriStr = customDownloadPath.value
-        val destDir: File = if (customUriStr.isNotBlank()) {
-            try {
-                val uri = Uri.parse(customUriStr)
-                val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
-                if (docFile?.canWrite() == true) {
-                    // Use app-specific Movies dir as fallback since SAF write needs streams
-                    context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
-                } else {
-                    context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+        val isGalleryOn = galleryVisible.value
+
+        Log.d(TAG, "copyToMoviesDir galleryVisible=$isGalleryOn customPath='$customUriStr' fileName=$fileName")
+
+        return when {
+            // Gallery ON + custom SAF folder selected — write via SAF streams
+            isGalleryOn && customUriStr.isNotBlank() -> {
+                try {
+                    val treeUri = Uri.parse(customUriStr)
+                    val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                    if (docDir?.canWrite() == true) {
+                        // Determine MIME type from extension
+                        val mime = when (ext.lowercase()) {
+                            "mkv" -> "video/x-matroska"
+                            "webm" -> "video/webm"
+                            "mov" -> "video/quicktime"
+                            "m4v" -> "video/x-m4v"
+                            else -> "video/mp4"
+                        }
+                        // Delete existing file with same name to avoid duplicates
+                        docDir.findFile(fileName)?.delete()
+                        val destDoc = docDir.createFile(mime, fileName)
+                        if (destDoc != null) {
+                            context.contentResolver.openOutputStream(destDoc.uri)?.use { out ->
+                                src.inputStream().use { it.copyTo(out) }
+                            }
+                            // Notify MediaScanner so file appears in Gallery apps
+                            android.media.MediaScannerConnection.scanFile(
+                                context, arrayOf(destDoc.uri.toString()), arrayOf(mime)
+                            ) { path, uri -> Log.d(TAG, "MediaScanner SAF scanned path=$path uri=$uri") }
+                            Log.d(TAG, "copyToMoviesDir — SAF write success uri=${destDoc.uri}")
+                            // Return the SAF URI string as the stored path
+                            destDoc.uri.toString()
+                        } else {
+                            Log.w(TAG, "copyToMoviesDir — SAF createFile failed, falling back to private storage")
+                            copyToPrivateMoviesDir(src, fileName)
+                        }
+                    } else {
+                        Log.w(TAG, "copyToMoviesDir — SAF dir not writable, falling back to private storage")
+                        copyToPrivateMoviesDir(src, fileName)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "copyToMoviesDir — SAF write failed", e)
+                    copyToPrivateMoviesDir(src, fileName)
                 }
-            } catch (e: Exception) {
-                context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
             }
-        } else {
-            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return sourcePath
+            // Gallery ON + no custom folder — write to public Download/Hasikit/ dir
+            isGalleryOn && customUriStr.isBlank() -> {
+                try {
+                    val publicDir = File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        "Hasikit"
+                    ).also { it.mkdirs() }
+                    val dest = File(publicDir, fileName)
+                    src.copyTo(dest, overwrite = true)
+                    // Notify MediaScanner so file appears in Gallery apps
+                    android.media.MediaScannerConnection.scanFile(
+                        context, arrayOf(dest.absolutePath), null
+                    ) { path, uri -> Log.d(TAG, "MediaScanner public scanned path=$path uri=$uri") }
+                    Log.d(TAG, "copyToMoviesDir — public Download/Hasikit/ write success path=${dest.absolutePath}")
+                    dest.absolutePath
+                } catch (e: Exception) {
+                    Log.e(TAG, "copyToMoviesDir — public dir write failed", e)
+                    copyToPrivateMoviesDir(src, fileName)
+                }
+            }
+            // Gallery OFF — store privately, do NOT notify MediaScanner
+            else -> copyToPrivateMoviesDir(src, fileName)
         }
-        val dest = File(destDir, "${safeTitle}_${safeId}.$ext")
+    }
+
+    // Write to app-private Movies dir — not visible in Gallery
+    private fun copyToPrivateMoviesDir(src: File, fileName: String): String {
+        val destDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: return src.absolutePath
+        val dest = File(destDir, fileName)
         return try {
             src.copyTo(dest, overwrite = true)
-            Log.d(TAG, "Copied to: ${dest.absolutePath}")
+            Log.d(TAG, "copyToPrivateMoviesDir — private storage path=${dest.absolutePath}")
             dest.absolutePath
         } catch (e: Exception) {
-            Log.e(TAG, "Copy failed, using TDLib path: $sourcePath", e)
-            sourcePath
+            Log.e(TAG, "copyToPrivateMoviesDir — copy failed, using TDLib path", e)
+            src.absolutePath
         }
     }
 

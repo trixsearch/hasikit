@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sort
@@ -43,7 +45,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -84,6 +85,7 @@ import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.download.HasikitDownloadManager
+import com.trixsearch.hasikit.ui.components.FastScrollerBox
 import com.trixsearch.hasikit.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -185,9 +187,9 @@ fun LibraryScreen(
     // Library sort order — default newest first
     var sortOrder by remember { mutableStateOf(LibrarySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
-    // Bulk selection mode
+    // Bulk selection mode — long-press a card to enter, or tap the select icon
     var selectionMode by remember { mutableStateOf(false) }
-    // Use mutableStateOf(setOf()) — copy-on-write set, avoids SnapshotStateSet classpath issues
+    // Copy-on-write set for selected video IDs
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
 
     // Apply sort to downloaded items
@@ -265,10 +267,21 @@ fun LibraryScreen(
                             }
                         }
                     }
-                    // FIX #2 — Bulk select toggle: entering selection mode shows select-all checkbox
+                    // Bulk select toggle — single tap immediately selects all items without a second action
                     IconButton(onClick = {
-                        selectionMode = !selectionMode
-                        if (!selectionMode) selectedIds = emptySet()
+                        if (selectionMode && selectedIds.isNotEmpty()) {
+                            // Already in selection mode with items selected — exit and clear
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        } else if (!selectionMode) {
+                            // FIX: single tap enters selection mode AND selects all items immediately
+                            selectionMode = true
+                            selectedIds = filteredDownloaded.map { it.video.id }.toSet()
+                        } else {
+                            // In selection mode but nothing selected — exit
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        }
                     }) {
                         Icon(
                             if (selectionMode) Icons.Default.CheckCircle else Icons.Default.CheckBoxOutlineBlank,
@@ -277,57 +290,66 @@ fun LibraryScreen(
                         )
                     }
                 }
-                // FIX #2 — Bulk action bar: select-all checkbox + action buttons
+                // Bulk action bar — shown when selection mode is active
                 if (selectionMode) {
+                    val selCount = selectedIds.size
+                    val allSelected = filteredDownloaded.isNotEmpty() && filteredDownloaded.all { it.video.id in selectedIds }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // FIX #2 — Select-all checkbox: checked = all visible selected, unchecked = none selected
-                        val allSelected = filteredDownloaded.isNotEmpty() && filteredDownloaded.all { it.video.id in selectedIds }
-                        Checkbox(
-                            checked = allSelected,
-                            onCheckedChange = { checked ->
-                                // FIX #2 — Checked: select all visible; unchecked: clear all
-                                selectedIds = if (checked) filteredDownloaded.map { it.video.id }.toSet() else emptySet()
-                            }
-                        )
-                        // Use local val to avoid size() parse ambiguity in string template
-                        val selCount = selectedIds.size
-                        Text(
-                            if (selCount == 0) "Select all" else "$selCount selected",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        // Select All button — immediately selects all visible items on tap
+                        TextButton(onClick = {
+                            selectedIds = if (allSelected) emptySet()
+                            else filteredDownloaded.map { it.video.id }.toSet()
+                        }) {
+                            Text(if (allSelected) "Deselect All" else "Select All", style = MaterialTheme.typography.labelMedium)
+                        }
+                        if (selCount > 0) {
+                            Text("$selCount selected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Spacer(Modifier.weight(1f))
-                        if (selectedIds.isNotEmpty()) {
-                            // Play first selected item
-                            TextButton(onClick = {
+                        if (selCount == 1) {
+                            // Single selection actions: Play, Resume, Pause, Delete
+                            val singleItem = filteredDownloaded.firstOrNull { it.video.id in selectedIds }
+                            IconButton(onClick = {
+                                singleItem?.let { navController.navigate(Screen.Player.createRoute(it.video.id)) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
+                                singleItem?.let { viewModel.resumeDownload(it.video) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.PlayCircle, "Resume", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
+                                singleItem?.let { viewModel.pauseDownload(it.video.id) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.Pause, "Pause", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
+                                singleItem?.let { viewModel.deleteDownload(it.video.id) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)) }
+                        } else if (selCount > 1) {
+                            // Multi selection actions: Play Queue, Pause Downloads, Resume Downloads, Delete Selected
+                            IconButton(onClick = {
                                 val first = filteredDownloaded.firstOrNull { it.video.id in selectedIds }
                                 first?.let { navController.navigate(Screen.Player.createRoute(it.video.id)) }
                                 selectionMode = false; selectedIds = emptySet()
-                            }) { Text("Play") }
-                            // Resume selected downloads
-                            TextButton(onClick = {
+                            }) { Icon(Icons.Default.PlayArrow, "Play Queue", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
+                                selectedIds.forEach { id -> viewModel.pauseDownload(id) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.Pause, "Pause Downloads", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
                                 selectedIds.forEach { id ->
                                     filteredDownloaded.find { it.video.id == id }?.let { viewModel.resumeDownload(it.video) }
                                 }
                                 selectionMode = false; selectedIds = emptySet()
-                            }) { Text("Resume") }
-                            // Pause selected downloads
-                            TextButton(onClick = {
-                                selectedIds.forEach { id -> viewModel.pauseDownload(id) }
+                            }) { Icon(Icons.Default.PlayCircle, "Resume Downloads", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) }
+                            IconButton(onClick = {
+                                selectedIds.forEach { id -> viewModel.deleteDownload(id) }
                                 selectionMode = false; selectedIds = emptySet()
-                            }) { Text("Pause") }
-                            // Delete selected
-                            TextButton(
-                                onClick = {
-                                    selectedIds.forEach { id -> viewModel.deleteDownload(id) }
-                                    selectionMode = false; selectedIds = emptySet()
-                                },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                            ) { Text("Delete") }
+                            }) { Icon(Icons.Default.Delete, "Delete Selected", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)) }
                         }
                     }
                 }
@@ -360,8 +382,15 @@ fun LibraryScreen(
         if (downloadedItems.isEmpty() && activeDownloads.isEmpty()) {
             EmptyLibraryState(modifier = Modifier.padding(padding))
         } else {
+            val libraryListState = androidx.compose.foundation.lazy.rememberLazyListState()
+            // Fast scroller wraps the LazyColumn for quick navigation through long download lists
+            FastScrollerBox(
+                listState = libraryListState,
+                modifier = Modifier.padding(padding)
+            ) {
             LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize(),
+                modifier = Modifier.fillMaxSize(),
+                state = libraryListState,
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 if (activeDownloads.isNotEmpty()) {
@@ -416,7 +445,8 @@ fun LibraryScreen(
                         }
                     }
                 }
-            }
+            } // end LazyColumn
+            } // end FastScrollerBox
         }
     }
 }

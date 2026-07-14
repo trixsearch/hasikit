@@ -3,7 +3,9 @@ package com.trixsearch.hasikit.ui.screens.search
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +26,7 @@ import com.trixsearch.hasikit.telegram.config.TelegramSource
 import com.trixsearch.hasikit.telegram.config.TelegramSourceConfig
 import com.trixsearch.hasikit.telegram.domain.model.TelegramMedia
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
+import com.trixsearch.hasikit.ui.components.FastScrollerBox
 import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.screens.home.HorizontalVideoCard
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -250,7 +253,11 @@ fun SearchScreen(
                 }
             }
             else -> {
+                val searchListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                // Fast scroller wraps search results for quick navigation through long result lists
+                FastScrollerBox(listState = searchListState) {
                 LazyColumn(
+                    state = searchListState,
                     modifier = Modifier.padding(padding),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
@@ -262,6 +269,7 @@ fun SearchScreen(
                         )
                     }
                 }
+                } // end FastScrollerBox
             }
         }
     }

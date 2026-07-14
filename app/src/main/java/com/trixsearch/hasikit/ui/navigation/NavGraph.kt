@@ -32,17 +32,15 @@ fun NavGraph(
     val authViewModel: AuthViewModel = hiltViewModel()
     val authState by authViewModel.authState.collectAsState()
 
+    // Single HomeViewModel instance scoped to the NavGraph so HomeScreen and SearchScreen share it
     val homeViewModel: HomeViewModel = hiltViewModel()
-    val videos by homeViewModel.videos.collectAsState()
 
     // Always start on Auth; navigate to Home once session restore confirms authenticated.
-    // This avoids the race where startDestination is computed before restoreSession completes.
     NavHost(
         navController = navController,
         startDestination = Screen.Auth.route
     ) {
         composable(Screen.Auth.route) {
-            // If already authenticated (session restored), skip straight to Home
             LaunchedEffect(authState) {
                 if (authState is AuthState.Authenticated) {
                     navController.navigate(Screen.Home.route) {
@@ -61,11 +59,13 @@ fun NavGraph(
         }
 
         composable(Screen.Home.route) {
+            // Reuse the NavGraph-scoped HomeViewModel — prevents double instantiation and double fetches
             HomeScreen(navController, homeViewModel)
         }
         composable(Screen.Search.route) {
-            // Two-stage search — pass local video cache from HomeViewModel so Stage 1 works immediately
             val searchViewModel: com.trixsearch.hasikit.ui.screens.search.SearchViewModel = hiltViewModel()
+            // Pass local video cache from the shared HomeViewModel so Stage 1 search works immediately
+            val videos by homeViewModel.videos.collectAsState()
             LaunchedEffect(videos) { searchViewModel.setLocalVideos(videos) }
             SearchScreen(navController, searchViewModel)
         }
@@ -92,7 +92,6 @@ fun NavGraph(
             val rawId = backStackEntry.arguments?.getString("videoId") ?: ""
             val videoId = Screen.Player.decodeId(rawId)
 
-            // External player: launched via ACTION_VIEW from another app
             if (videoId.startsWith("external_")) {
                 PlayerScreen(
                     videoId = videoId,
@@ -106,6 +105,8 @@ fun NavGraph(
                 return@composable
             }
 
+            // Read videos from the shared HomeViewModel
+            val videos by homeViewModel.videos.collectAsState()
             val video = videos.find { it.id == videoId }
             if (video != null) {
                 PlayerScreen(
@@ -115,13 +116,11 @@ fun NavGraph(
                     videoUrl = video.videoUrl,
                     localPath = video.localPath,
                     telegramFileId = video.telegramFileId,
-                    // FIX #6 — Pass streamability and download state for auto-download on stream
                     isStreamable = video.isStreamable,
                     isDownloaded = video.isDownloaded,
                     onBack = { navController.popBackStack() }
                 )
             } else {
-                // Video not yet in memory — parse composite ID and play via telegramFileId
                 val parts = videoId.split("_")
                 val telegramFileId = if (parts.size == 2) parts[1] else ""
                 PlayerScreen(

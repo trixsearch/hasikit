@@ -258,22 +258,20 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         chatId: Long,
         offsetMessageId: Long,
         limit: Int
-    ): Result<List<TelegramMedia>> {
+    ): Result<Pair<List<TelegramMedia>, Int>> {
         Log.d(TAG, "getChannelMedia chatId=$chatId offset=$offsetMessageId limit=$limit")
         return suspendCancellableCoroutine { cont ->
-            // TDLib GetChatHistory: fromMessageId=0 means start from newest message.
-            // offset=0 with limit=N returns the N most recent messages.
-            // For pagination: fromMessageId = oldest loaded messageId, offset=0 fetches older messages.
-            // Bug fix: when offsetMessageId=0 (initial load), use offset=0 to get latest N messages.
-            // When offsetMessageId>0 (pagination), use that id as cursor to get older messages.
             clientService.send(
                 TdApi.GetChatHistory(chatId, offsetMessageId, 0, limit, false)
             ) { result ->
                 when (result) {
                     is TdApi.Messages -> {
                         val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
-                        Log.d(TAG, "getChannelMedia total=${result.totalCount} loaded=${result.messages.size} media=${media.size} offsetId=$offsetMessageId")
-                        cont.resume(Result.success(media))
+                        // rawCount: actual messages returned by TDLib before video filter
+                        // hasMore must be based on rawCount so non-video messages don't stop pagination
+                        val rawCount = result.messages.size
+                        Log.d(TAG, "getChannelMedia total=${result.totalCount} raw=$rawCount media=${media.size} offsetId=$offsetMessageId")
+                        cont.resume(Result.success(Pair(media, rawCount)))
                     }
                     is TdApi.Error -> {
                         Log.e(TAG, "getChannelMedia error ${result.code}: ${result.message}")
@@ -292,28 +290,42 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         limit: Int
     ): Result<List<TelegramMedia>> {
         Log.d(TAG, "searchChannelMedia chatId=$chatId query=$query")
-        return suspendCancellableCoroutine { cont ->
-            clientService.send(
-                TdApi.SearchChatMessages(
-                    chatId, null, query, null, 0, 0, limit,
-                    TdApi.SearchMessagesFilterVideo()
-                )
-            ) { result ->
-                when (result) {
-                    is TdApi.FoundChatMessages -> {
-                        val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
-                        Log.d(TAG, "searchChannelMedia found=${result.totalCount} media=${media.size}")
-                        cont.resume(Result.success(media))
+        // Paginate through entire channel history using SearchChatMessages nextFromMessageId cursor
+        val allMedia = mutableListOf<TelegramMedia>()
+        var fromMessageId = 0L
+        val batchSize = 100 // TDLib max per call
+        while (true) {
+            data class BatchResult(val media: List<TelegramMedia>, val nextFromMessageId: Long)
+            val batch = suspendCancellableCoroutine<Result<BatchResult>> { cont ->
+                clientService.send(
+                    TdApi.SearchChatMessages(
+                        chatId, null, query, null, fromMessageId, 0, batchSize,
+                        TdApi.SearchMessagesFilterVideo()
+                    )
+                ) { result ->
+                    when (result) {
+                        is TdApi.FoundChatMessages -> {
+                            val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
+                            Log.d(TAG, "searchChannelMedia batch fromMsgId=$fromMessageId found=${result.messages.size} media=${media.size} next=${result.nextFromMessageId}")
+                            cont.resume(Result.success(BatchResult(media, result.nextFromMessageId)))
+                        }
+                        is TdApi.Error -> {
+                            Log.e(TAG, "searchChannelMedia error ${result.code}: ${result.message}")
+                            cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                        }
+                        else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                     }
-                    is TdApi.Error -> {
-                        Log.e(TAG, "searchChannelMedia error ${result.code}: ${result.message}")
-                        cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
-                    }
-                    else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                 }
+                cont.invokeOnCancellation {}
             }
-            cont.invokeOnCancellation {}
+            val batchResult = batch.getOrNull() ?: break
+            allMedia.addAll(batchResult.media)
+            // nextFromMessageId == 0 means no more results
+            if (batchResult.media.isEmpty() || batchResult.nextFromMessageId == 0L) break
+            fromMessageId = batchResult.nextFromMessageId
         }
+        Log.d(TAG, "searchChannelMedia complete chatId=$chatId query=$query total=${allMedia.size}")
+        return Result.success(allMedia)
     }
 
     // ── File URL resolution ───────────────────────────────────────────────────
@@ -423,7 +435,7 @@ private fun isSupportedExt(fileName: String): Boolean =
 
 private fun cleanTitle(raw: String): String {
     val noExt = raw.substringBeforeLast(".")
-    return noExt
+    val cleaned = noExt
         .replace(Regex("[._]"), " ")
         .replace(
             Regex(
@@ -433,5 +445,6 @@ private fun cleanTitle(raw: String): String {
         )
         .replace(Regex("\\s{2,}"), " ")
         .trim()
-        .ifBlank { raw }
+    // If cleaning produced a blank or purely numeric string, fall back to the raw filename without extension
+    return if (cleaned.isBlank() || cleaned.all { it.isDigit() }) noExt.ifBlank { raw } else cleaned
 }
