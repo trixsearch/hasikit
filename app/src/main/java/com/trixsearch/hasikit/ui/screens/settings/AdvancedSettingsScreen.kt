@@ -26,8 +26,11 @@ fun AdvancedSettingsScreen(
     val cacheSize by viewModel.cacheSize.collectAsState()
     val customAspectRatios by viewModel.customAspectRatios.collectAsState()
 
+    // FIX #7 — Separate dialogs for each clear action
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearAllDialog by remember { mutableStateOf(false) }
+    var showClearThumbnailDialog by remember { mutableStateOf(false) }
+    var showClearPlayerDialog by remember { mutableStateOf(false) }
     var showForceDeleteDialog by remember { mutableStateOf(false) }
     // Added custom aspect ratio dialog state
     var showAddRatioDialog by remember { mutableStateOf(false) }
@@ -75,22 +78,22 @@ fun AdvancedSettingsScreen(
                         modifier = Modifier.clickable { if (cacheSize > 0) showClearCacheDialog = true }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    // Clear thumbnail cache — subset of full cache
+                    // FIX #7 — Clear thumbnail cache only
                     ListItem(
                         headlineContent = { Text("Clear Thumbnail Cache", fontWeight = FontWeight.Medium) },
                         supportingContent = { Text("Remove cached video thumbnails", style = MaterialTheme.typography.bodySmall) },
                         leadingContent = { Icon(Icons.Default.HideImage, null, tint = MaterialTheme.colorScheme.error) },
                         trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                        modifier = Modifier.clickable { showClearCacheDialog = true }
+                        modifier = Modifier.clickable { showClearThumbnailDialog = true }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    // Clear player cache — ExoPlayer buffer cache
+                    // FIX #7 — Clear ExoPlayer buffer cache only
                     ListItem(
                         headlineContent = { Text("Clear Player Cache", fontWeight = FontWeight.Medium) },
                         supportingContent = { Text("Remove ExoPlayer buffer cache", style = MaterialTheme.typography.bodySmall) },
                         leadingContent = { Icon(Icons.Default.VideocamOff, null, tint = MaterialTheme.colorScheme.error) },
                         trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                        modifier = Modifier.clickable { showClearCacheDialog = true }
+                        modifier = Modifier.clickable { showClearPlayerDialog = true }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     // Clear all storage including downloads
@@ -155,6 +158,40 @@ fun AdvancedSettingsScreen(
 
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+
+    // FIX #7 — Clear thumbnail cache confirmation dialog
+    if (showClearThumbnailDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearThumbnailDialog = false },
+            icon = { Icon(Icons.Default.HideImage, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Clear Thumbnail Cache") },
+            text = { Text("Delete all cached video thumbnails? They will be re-downloaded when needed.") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.clearThumbnailCache(); showClearThumbnailDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { showClearThumbnailDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    // FIX #7 — Clear player cache confirmation dialog
+    if (showClearPlayerDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearPlayerDialog = false },
+            icon = { Icon(Icons.Default.VideocamOff, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Clear Player Cache") },
+            text = { Text("Delete ExoPlayer buffer cache? This frees space used by video buffering.") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.clearPlayerCache(); showClearPlayerDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { showClearPlayerDialog = false }) { Text("Cancel") } }
+        )
     }
 
     // Clear cache confirmation dialog

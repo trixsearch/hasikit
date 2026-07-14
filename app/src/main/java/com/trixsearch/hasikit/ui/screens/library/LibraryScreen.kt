@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -264,7 +265,7 @@ fun LibraryScreen(
                             }
                         }
                     }
-                    // Bulk select toggle
+                    // FIX #2 — Bulk select toggle: entering selection mode shows select-all checkbox
                     IconButton(onClick = {
                         selectionMode = !selectionMode
                         if (!selectionMode) selectedIds = emptySet()
@@ -276,43 +277,58 @@ fun LibraryScreen(
                         )
                     }
                 }
-                // Bulk action bar — shown when items are selected
-                if (selectionMode && selectedIds.isNotEmpty()) {
+                // FIX #2 — Bulk action bar: select-all checkbox + action buttons
+                if (selectionMode) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // FIX #2 — Select-all checkbox: checked = all visible selected, unchecked = none selected
+                        val allSelected = filteredDownloaded.isNotEmpty() && filteredDownloaded.all { it.video.id in selectedIds }
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = { checked ->
+                                // FIX #2 — Checked: select all visible; unchecked: clear all
+                                selectedIds = if (checked) filteredDownloaded.map { it.video.id }.toSet() else emptySet()
+                            }
+                        )
                         // Use local val to avoid size() parse ambiguity in string template
                         val selCount = selectedIds.size
-                        Text("$selCount selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            if (selCount == 0) "Select all" else "$selCount selected",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         Spacer(Modifier.weight(1f))
-                        // Play first selected item
-                        TextButton(onClick = {
-                            val first = filteredDownloaded.firstOrNull { it.video.id in selectedIds }
-                            first?.let { navController.navigate(Screen.Player.createRoute(it.video.id)) }
-                            selectionMode = false; selectedIds = emptySet()
-                        }) { Text("Play") }
-                        // Resume selected downloads
-                        TextButton(onClick = {
-                            selectedIds.forEach { id ->
-                                filteredDownloaded.find { it.video.id == id }?.let { viewModel.resumeDownload(it.video) }
-                            }
-                            selectionMode = false; selectedIds = emptySet()
-                        }) { Text("Resume") }
-                        // Pause selected downloads
-                        TextButton(onClick = {
-                            selectedIds.forEach { id -> viewModel.pauseDownload(id) }
-                            selectionMode = false; selectedIds = emptySet()
-                        }) { Text("Pause") }
-                        // Delete selected
-                        TextButton(
-                            onClick = {
-                                selectedIds.forEach { id -> viewModel.deleteDownload(id) }
+                        if (selectedIds.isNotEmpty()) {
+                            // Play first selected item
+                            TextButton(onClick = {
+                                val first = filteredDownloaded.firstOrNull { it.video.id in selectedIds }
+                                first?.let { navController.navigate(Screen.Player.createRoute(it.video.id)) }
                                 selectionMode = false; selectedIds = emptySet()
-                            },
-                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Delete") }
+                            }) { Text("Play") }
+                            // Resume selected downloads
+                            TextButton(onClick = {
+                                selectedIds.forEach { id ->
+                                    filteredDownloaded.find { it.video.id == id }?.let { viewModel.resumeDownload(it.video) }
+                                }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Text("Resume") }
+                            // Pause selected downloads
+                            TextButton(onClick = {
+                                selectedIds.forEach { id -> viewModel.pauseDownload(id) }
+                                selectionMode = false; selectedIds = emptySet()
+                            }) { Text("Pause") }
+                            // Delete selected
+                            TextButton(
+                                onClick = {
+                                    selectedIds.forEach { id -> viewModel.deleteDownload(id) }
+                                    selectionMode = false; selectedIds = emptySet()
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) { Text("Delete") }
+                        }
                     }
                 }
                 if (downloadedItems.isNotEmpty()) {

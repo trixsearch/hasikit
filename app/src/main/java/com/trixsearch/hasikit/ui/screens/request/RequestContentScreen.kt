@@ -433,8 +433,8 @@ fun RequestContentScreen(
                         }
                     }
 
-                    // Year: wheel picker — tapping opens scroll picker dialog, not a text field
-                    Box(modifier = Modifier.width(110.dp)) {
+                    // FIX #5 — Year field: use weight(0.45f) instead of fixed 110.dp so label stays on one line
+                    Box(modifier = Modifier.weight(0.45f)) {
                         OutlinedTextField(
                             value = selectedYear?.toString() ?: "",
                             onValueChange = {},

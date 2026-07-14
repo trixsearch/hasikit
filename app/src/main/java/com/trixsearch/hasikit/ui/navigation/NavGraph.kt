@@ -115,6 +115,9 @@ fun NavGraph(
                     videoUrl = video.videoUrl,
                     localPath = video.localPath,
                     telegramFileId = video.telegramFileId,
+                    // FIX #6 — Pass streamability and download state for auto-download on stream
+                    isStreamable = video.isStreamable,
+                    isDownloaded = video.isDownloaded,
                     onBack = { navController.popBackStack() }
                 )
             } else {

@@ -81,6 +81,7 @@ private val KEY_AUTOPLAY_NEXT = booleanPreferencesKey("autoplay_next_video")
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: VideoRepository,
+    // FIX #7/#9 — Inject download manager to access custom download path during storage clear
     private val downloadManager: HasikitDownloadManager,
     private val telegramAuthRepository: TelegramAuthRepository,
     private val telegramSourceConfig: TelegramSourceConfig,
@@ -229,35 +230,102 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun clearCache() {
+    // FIX #7 — Clear thumbnail cache only (Coil image cache directory)
+    fun clearThumbnailCache() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                context.cacheDir.deleteRecursively()
-                context.externalCacheDir?.deleteRecursively()
-                _cacheSize.value = 0L
-                Log.d(TAG, "Cache cleared")
+                // Coil stores thumbnails in cacheDir/image_cache by default
+                val coilDir = java.io.File(context.cacheDir, "image_cache")
+                if (coilDir.exists()) coilDir.deleteRecursively()
+                // Also clear external cache thumbnails
+                context.externalCacheDir?.let { ext ->
+                    java.io.File(ext, "image_cache").takeIf { it.exists() }?.deleteRecursively()
+                }
+                Log.d(TAG, "FIX #7 — Thumbnail cache cleared")
+                refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to clear cache", e)
+                Log.e(TAG, "FIX #7 — Failed to clear thumbnail cache", e)
             }
         }
     }
 
+    // FIX #7 — Clear ExoPlayer buffer cache only
+    fun clearPlayerCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // ExoPlayer writes its cache to cacheDir/exoplayer by default
+                val exoDir = java.io.File(context.cacheDir, "exoplayer")
+                if (exoDir.exists()) exoDir.deleteRecursively()
+                val exoDirAlt = java.io.File(context.cacheDir, "media3")
+                if (exoDirAlt.exists()) exoDirAlt.deleteRecursively()
+                Log.d(TAG, "FIX #7 — Player cache cleared")
+                refreshStorageStats()
+            } catch (e: Exception) {
+                Log.e(TAG, "FIX #7 — Failed to clear player cache", e)
+            }
+        }
+    }
+
+    // FIX #7 — Clear Cache: temp files + player cache + thumbnail cache, NOT downloaded videos
+    fun clearCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Delete entire internal cache dir (includes Coil, ExoPlayer, temp files)
+                context.cacheDir.deleteRecursively()
+                // Recreate cache dir so app can write again immediately
+                context.cacheDir.mkdirs()
+                // Delete external cache dir (thumbnails, temp)
+                context.externalCacheDir?.deleteRecursively()
+                context.externalCacheDir?.mkdirs()
+                _cacheSize.value = 0L
+                Log.d(TAG, "FIX #7 — Cache cleared (temp + player + thumbnails, downloads preserved)")
+                refreshStorageStats()
+            } catch (e: Exception) {
+                Log.e(TAG, "FIX #7 — Failed to clear cache", e)
+            }
+        }
+    }
+
+    // FIX #7 — Clear All Storage: downloads + cache + Telegram cached media + DB records
     fun clearAllStorage() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Delete all downloaded files from disk
-                context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { dir ->
-                    dir.listFiles()?.forEach { it.delete() }
+                // FIX #9 — Delete from selected download folder first
+                val customUriStr = downloadManager.customDownloadPath.value
+                if (customUriStr.isNotBlank()) {
+                    try {
+                        val uri = android.net.Uri.parse(customUriStr)
+                        val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                        docFile?.listFiles()?.forEach { it.delete() }
+                        Log.d(TAG, "FIX #9 — Deleted files from custom download folder")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "FIX #9 — Could not delete from custom folder", e)
+                    }
                 }
-                // Clear cache
+                // Delete all downloaded files from default app Movies dir
+                context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { dir ->
+                    dir.listFiles()?.forEach { file ->
+                        val deleted = file.delete()
+                        Log.d(TAG, "FIX #7 — Delete file ${file.name}: $deleted")
+                    }
+                    // Recreate dir so downloads can resume immediately
+                    dir.mkdirs()
+                }
+                // Delete Telegram cached media from external files dir
+                context.getExternalFilesDir(null)?.let { dir ->
+                    dir.listFiles()?.filter { it.name != "Movies" }?.forEach { it.deleteRecursively() }
+                }
+                // Clear all cache dirs
                 context.cacheDir.deleteRecursively()
+                context.cacheDir.mkdirs()
                 context.externalCacheDir?.deleteRecursively()
+                context.externalCacheDir?.mkdirs()
                 // Clear all DB records (downloads, videos, watch progress)
                 repository.clearAllStorage()
-                Log.d(TAG, "All storage cleared")
+                Log.d(TAG, "FIX #7 — All storage cleared")
                 refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to clear all storage", e)
+                Log.e(TAG, "FIX #7 — Failed to clear all storage", e)
             }
         }
     }
@@ -672,10 +740,13 @@ private fun TelegramSourcesSection(
         }
     }
 
+    // FIX #1 — Add Source Search: search query state for filtering joined chats in import dialog
+    var chatSearchQuery by remember { mutableStateOf("") }
+
     // Import from Telegram dialog — multi-select list of joined chats
     if (showImportDialog) {
         AlertDialog(
-            onDismissRequest = { showImportDialog = false },
+            onDismissRequest = { showImportDialog = false; chatSearchQuery = "" },
             icon = { Icon(Icons.Default.ImportExport, null) },
             title = { Text("Import from Telegram") },
             text = {
@@ -691,40 +762,67 @@ private fun TelegramSourcesSection(
                     } else if (joinedChats.isEmpty()) {
                         Text("No channels or groups found.", style = MaterialTheme.typography.bodySmall)
                     } else {
-                        Text(
-                            "Select channels/groups to add as sources:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                            items(joinedChats.size) { idx ->
-                                val chat = joinedChats[idx]
-                                val isChecked = chat.chatId in selectedChats
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            // Copy-on-write toggle
-                                            selectedChats = if (isChecked) selectedChats - chat.chatId else selectedChats + chat.chatId
-                                        }
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = isChecked,
-                                        onCheckedChange = {
-                                            // Copy-on-write toggle
-                                            selectedChats = if (it) selectedChats + chat.chatId else selectedChats - chat.chatId
-                                        }
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(chat.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                        Text(chat.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // FIX #1 — Search bar filters channels/groups/supergroups by name instantly
+                        OutlinedTextField(
+                            value = chatSearchQuery,
+                            onValueChange = { chatSearchQuery = it },
+                            placeholder = { Text("Search channels & groups…", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                if (chatSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { chatSearchQuery = "" }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Clear, "Clear", modifier = Modifier.size(16.dp))
                                     }
                                 }
-                                HorizontalDivider()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            singleLine = true
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        // FIX #1 — Filter joined chats by name; include channels, groups, supergroups
+                        val filteredChats = remember(joinedChats, chatSearchQuery) {
+                            if (chatSearchQuery.isBlank()) joinedChats
+                            else joinedChats.filter { it.title.contains(chatSearchQuery.trim(), ignoreCase = true) }
+                        }
+                        if (filteredChats.isEmpty()) {
+                            Text("No results for \"$chatSearchQuery\"", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text(
+                                "Select channels/groups to add as sources:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
+                                items(filteredChats.size) { idx ->
+                                    val chat = filteredChats[idx]
+                                    val isChecked = chat.chatId in selectedChats
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                // Copy-on-write toggle
+                                                selectedChats = if (isChecked) selectedChats - chat.chatId else selectedChats + chat.chatId
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = isChecked,
+                                            onCheckedChange = {
+                                                // Copy-on-write toggle
+                                                selectedChats = if (it) selectedChats + chat.chatId else selectedChats - chat.chatId
+                                            }
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(chat.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                            Text(chat.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
                             }
                         }
                     }
@@ -745,7 +843,7 @@ private fun TelegramSourcesSection(
                     Text(addLabel)
                 }
             },
-            dismissButton = { TextButton(onClick = { showImportDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showImportDialog = false; chatSearchQuery = "" }) { Text("Cancel") } }
         )
     }
 

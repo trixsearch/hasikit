@@ -235,18 +235,23 @@ class HomeViewModel @Inject constructor(
 
     private suspend fun loadPage(source: TelegramSource, chatId: Long, reset: Boolean): SourcePage? {
         val existing = if (reset) null else _sourcePages.value.find { it.chatId == chatId }
-        // Pagination cursor: use the oldest (minimum) messageId loaded so far as the offset.
+        // FIX #4 — Pagination cursor: use the oldest (minimum) messageId loaded so far as the offset.
         // TDLib GetChatHistory fetches messages OLDER than fromMessageId when offset=0.
         // On reset (initial load), offsetId=0 means start from the newest message.
         val offsetId = if (reset) 0L else existing?.lastMessageId ?: 0L
-        if (existing != null && !existing.hasMore && !reset) return existing
+        if (existing != null && !existing.hasMore && !reset) {
+            Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' hasMore=false, skipping")
+            return existing
+        }
+        Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' chatId=$chatId offsetId=$offsetId reset=$reset")
 
         return channelRepository.getChannelMedia(chatId, offsetId, PAGE_SIZE)
             .getOrNull()
             ?.let { page ->
                 val allMedia = if (reset) page else (existing?.media ?: emptyList()) + page
-                // Use the minimum messageId as the next pagination cursor (oldest message loaded)
+                // FIX #4 — Use the minimum messageId as the next pagination cursor (oldest message loaded)
                 val oldestMessageId = allMedia.minOfOrNull { it.messageId } ?: offsetId
+                Log.d(TAG, "FIX #4 — loadPage '${source.displayName}' fetched=${page.size} total=${allMedia.size} oldestMsgId=$oldestMessageId hasMore=${page.size >= PAGE_SIZE}")
                 SourcePage(
                     source = source,
                     chatId = chatId,
@@ -260,17 +265,34 @@ class HomeViewModel @Inject constructor(
     // Expose prefetch threshold so HomeScreen can trigger loadMore at the right scroll position
     val prefetchThreshold: Int get() = PREFETCH_THRESHOLD
 
+    // FIX #4 — Pagination: log cursor and loaded counts for diagnosis
     fun loadMore() {
         if (_isLoadingMore.value) return
         val pages = _sourcePages.value
-        if (pages.none { it.hasMore }) return
+        // FIX #4 — Log current state before deciding whether to load more
+        val totalLoaded = pages.sumOf { it.media.size }
+        val hasMoreAny = pages.any { it.hasMore }
+        Log.d(TAG, "FIX #4 — loadMore called: totalLoaded=$totalLoaded hasMore=$hasMoreAny pages=${pages.size}")
+        pages.forEach { page ->
+            Log.d(TAG, "FIX #4 —   source='${page.source.displayName}' loaded=${page.media.size} lastMessageId=${page.lastMessageId} hasMore=${page.hasMore}")
+        }
+        if (!hasMoreAny) {
+            Log.d(TAG, "FIX #4 — loadMore: no more pages available, skipping")
+            return
+        }
         viewModelScope.launch {
             _isLoadingMore.value = true
             val updated = pages.map { page ->
                 if (!page.hasMore) return@map page
-                loadPage(page.source, page.chatId, reset = false) ?: page
+                // FIX #4 — Log the cursor being used for this page fetch
+                Log.d(TAG, "FIX #4 — Fetching next page for '${page.source.displayName}' cursor=${page.lastMessageId}")
+                val result = loadPage(page.source, page.chatId, reset = false) ?: page
+                Log.d(TAG, "FIX #4 — After fetch '${page.source.displayName}': loaded=${result.media.size} newCursor=${result.lastMessageId} hasMore=${result.hasMore}")
+                result
             }
             _sourcePages.value = updated
+            val newTotal = updated.sumOf { it.media.size }
+            Log.d(TAG, "FIX #4 — loadMore complete: totalLoaded=$newTotal")
             // Automatically fetch thumbnails for all newly loaded items — no manual refresh needed
             fetchThumbnails(updated.flatMap { it.media })
             _isLoadingMore.value = false

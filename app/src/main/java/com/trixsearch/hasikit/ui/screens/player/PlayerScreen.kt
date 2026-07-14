@@ -57,8 +57,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.domain.repository.VideoRepository
+import com.trixsearch.hasikit.download.HasikitDownloadManager
 import com.trixsearch.hasikit.player.HasikitPlayer
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
 import com.trixsearch.hasikit.telegram.service.TelegramClientService
@@ -135,6 +137,8 @@ private const val STREAM_FAIL_THRESHOLD = 2
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val repository: VideoRepository,
+    // FIX #6 — Inject download manager to auto-download streamable videos during playback
+    private val downloadManager: HasikitDownloadManager,
     private val channelRepository: TelegramChannelRepository,
     private val telegramClientService: TelegramClientService
 ) : ViewModel() {
@@ -144,6 +148,14 @@ class PlayerViewModel @Inject constructor(
             repository.saveWatchProgress(
                 WatchProgress(videoId = videoId, lastPosition = position, duration = duration, lastWatchedAt = System.currentTimeMillis())
             )
+        }
+    }
+
+    // FIX #6 — Trigger background download when streaming begins for a streamable video
+    fun autoDownloadIfStreamable(video: Video) {
+        if (video.isStreamable && !video.isDownloaded) {
+            Log.d(TAG, "FIX #6 — autoDownloadIfStreamable videoId=${video.id}")
+            downloadManager.startBackgroundDownloadIfNeeded(video)
         }
     }
 
@@ -243,6 +255,9 @@ fun PlayerScreen(
     videoUrl: String,
     localPath: String?,
     telegramFileId: String = "",
+    // FIX #6 — Pass streamability and download state so auto-download can be triggered
+    isStreamable: Boolean = true,
+    isDownloaded: Boolean = false,
     onBack: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
@@ -528,6 +543,26 @@ fun PlayerScreen(
             if (streamFailCount >= STREAM_FAIL_THRESHOLD) {
                 showDownloadFallbackToast = true
             }
+        }
+    }
+
+    // FIX #6 — Auto-download streamable video when playback begins
+    // Triggered once when isPlaying becomes true for the first time in this session
+    LaunchedEffect(isPlaying) {
+        if (isPlaying && isStreamable && !isDownloaded && telegramFileId.isNotBlank()) {
+            val video = Video(
+                id = videoId,
+                title = title,
+                thumbnail = null,
+                videoUrl = videoUrl,
+                telegramFileId = telegramFileId,
+                duration = 0L,
+                size = 0L,
+                localPath = localPath,
+                isStreamable = true,
+                isDownloaded = false
+            )
+            viewModel.autoDownloadIfStreamable(video)
         }
     }
 

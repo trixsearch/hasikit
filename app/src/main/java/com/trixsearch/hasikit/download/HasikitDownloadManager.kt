@@ -236,23 +236,71 @@ class HasikitDownloadManager @Inject constructor(
         }
     }
 
+    // FIX #6 — Auto-download streamable videos when streaming begins
+    // Called by PlayerScreen when playback starts for a streamable video not yet downloaded
+    fun startBackgroundDownloadIfNeeded(video: Video) {
+        scope.launch {
+            val existing = repository.getDownload(video.id)
+            val isAlreadyDownloaded = video.isDownloaded || existing?.state == DownloadState.COMPLETED
+            val isAlreadyDownloading = existing?.state == DownloadState.DOWNLOADING || existing?.state == DownloadState.PAUSED
+            if (isAlreadyDownloaded || isAlreadyDownloading) {
+                Log.d(TAG, "FIX #6 — Auto-download skipped videoId=${video.id} alreadyDownloaded=$isAlreadyDownloaded alreadyDownloading=$isAlreadyDownloading")
+                return@launch
+            }
+            Log.d(TAG, "FIX #6 — Auto-download started for streaming video videoId=${video.id} title='${video.title}'")
+            startDownload(video)
+        }
+    }
+
     fun retryDownload(video: Video) {
         scope.launch { repository.deleteDownload(video.id) }
         startDownload(video)
     }
 
+    // FIX #8 — Delete video from DB + physical file + cached TDLib file
     fun deleteDownload(videoId: String) {
         scope.launch {
             val task = repository.getDownload(videoId)
             val video = repository.getVideoById(videoId)
+            Log.d(TAG, "FIX #8 — deleteDownload videoId=$videoId localPath=${video?.localPath} taskPath=${task?.localPath}")
+            // Cancel any active TDLib download first
             video?.telegramFileId?.toLongOrNull()?.let { fileId ->
                 telegramClientService.send(TdApi.CancelDownloadFile(fileId.toInt(), false)) {}
             }
-            task?.localPath?.let { path -> File(path).delete() }
-            video?.localPath?.let { path -> if (path != task?.localPath) File(path).delete() }
+            // FIX #8 — Delete physical file from task localPath
+            task?.localPath?.let { path ->
+                val file = java.io.File(path)
+                val deleted = file.delete()
+                Log.d(TAG, "FIX #8 — Deleted task file $path: $deleted")
+            }
+            // FIX #8 — Delete physical file from video localPath (may differ from task path)
+            video?.localPath?.let { path ->
+                if (path != task?.localPath) {
+                    val file = java.io.File(path)
+                    val deleted = file.delete()
+                    Log.d(TAG, "FIX #8 — Deleted video file $path: $deleted")
+                }
+            }
+            // FIX #9 — Also check custom download folder for the file
+            val customUriStr = customDownloadPath.value
+            if (customUriStr.isNotBlank() && video != null) {
+                try {
+                    val uri = android.net.Uri.parse(customUriStr)
+                    val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                    val safeId = videoId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(30)
+                    docDir?.listFiles()?.filter { it.name?.contains(safeId) == true }?.forEach {
+                        val deleted = it.delete()
+                        Log.d(TAG, "FIX #9 — Deleted from custom folder ${it.name}: $deleted")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "FIX #9 — Could not delete from custom folder", e)
+                }
+            }
+            // FIX #8 — Remove download record from DB
             repository.deleteDownload(videoId)
+            // FIX #8 — Update video record to reflect deletion (not fully deleting video row so history is preserved)
             video?.let { repository.updateVideo(it.copy(isDownloaded = false, localPath = null, downloadProgress = 0f)) }
-            Log.d(TAG, "Download record removed videoId=$videoId")
+            Log.d(TAG, "FIX #8 — Delete complete videoId=$videoId")
         }
     }
 }
