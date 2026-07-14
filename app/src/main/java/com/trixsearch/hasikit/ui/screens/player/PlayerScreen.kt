@@ -585,16 +585,24 @@ fun PlayerScreen(
                     this.player = player.getPlayerInstance()
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    // Force layout pass so the video surface renders immediately on first attach
-                    post { requestLayout() }
+                    // FIX: black screen — use TextureView instead of default SurfaceView.
+                    // SurfaceView can fail to render the first frame on some devices/ROMs because
+                    // the surface is created asynchronously and may not be ready when ExoPlayer
+                    // starts rendering. TextureView renders into a hardware-accelerated texture
+                    // that is always available immediately after view attachment.
+                    setVideoSurfaceView(null)
+                    videoSurfaceType = PlayerView.VIDEO_SURFACE_TYPE_TEXTURE_VIEW
+                    // Force a layout pass so the TextureView surface is allocated before playback starts
+                    post { requestLayout(); invalidate() }
                 }
             },
             update = { view ->
                 val instance = player.getPlayerInstance()
                 if (view.player !== instance) {
+                    // FIX: black screen — when player instance changes, re-attach and force surface refresh
                     view.player = instance
-                    // Re-trigger layout when player instance changes to ensure surface is visible
-                    view.post { view.requestLayout() }
+                    Log.d(TAG, "[PLAYER_VIEW] player instance changed — forcing surface refresh")
+                    view.post { view.requestLayout(); view.invalidate() }
                 }
                 view.resizeMode = fitMode.resizeMode
                 view.scaleX = videoScale; view.scaleY = videoScale

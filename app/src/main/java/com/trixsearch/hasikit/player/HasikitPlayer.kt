@@ -337,10 +337,35 @@ class HasikitPlayer @Inject constructor(
         Log.d(TAG, "[STOP] done")
     }
 
+    // FIX: seekTo — for MKV and all formats, clamp position and log seek details
+    // MKV seek was restarting from beginning because seekTo was called before STATE_READY.
+    // The fix: if player is still in STATE_IDLE or STATE_BUFFERING, defer seek until STATE_READY.
     fun seekTo(position: Long) {
-        val clamped = position.coerceAtLeast(0L)
-        Log.d(TAG, "[SEEK] ${clamped}ms")
-        exoPlayer?.seekTo(clamped)
+        val player = exoPlayer ?: run { Log.w(TAG, "[SEEK] skipped — ExoPlayer is null"); return }
+        val dur = player.duration.coerceAtLeast(0L)
+        val clamped = position.coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE)
+        val state = player.playbackState
+        Log.d(TAG, "[SEEK] requested=${position}ms clamped=${clamped}ms dur=${dur}ms state=$state isSeekable=${player.isCurrentMediaItemSeekable}")
+        when (state) {
+            Player.STATE_READY, Player.STATE_ENDED -> {
+                // Player is ready — seek immediately
+                player.seekTo(clamped)
+                Log.d(TAG, "[SEEK] immediate seek to ${clamped}ms")
+            }
+            Player.STATE_BUFFERING, Player.STATE_IDLE -> {
+                // Player not ready yet — queue seek via listener so it fires once STATE_READY is reached
+                Log.d(TAG, "[SEEK] deferred — waiting for STATE_READY before seeking to ${clamped}ms")
+                player.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) {
+                            player.seekTo(clamped)
+                            Log.d(TAG, "[SEEK] deferred seek executed to ${clamped}ms after STATE_READY")
+                            player.removeListener(this)
+                        }
+                    }
+                })
+            }
+        }
     }
 
     fun setSpeed(speed: Float) {

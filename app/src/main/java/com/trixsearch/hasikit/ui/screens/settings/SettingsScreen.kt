@@ -295,22 +295,61 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // FIX #7 — Clear Cache: temp files + player cache + thumbnail cache, NOT downloaded videos
+    // FIX: clearCache — physically delete every cache location and verify with before/after size logs
     fun clearCache() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Delete entire internal cache dir (includes Coil, ExoPlayer, temp files)
-                context.cacheDir.deleteRecursively()
-                // Recreate cache dir so app can write again immediately
-                context.cacheDir.mkdirs()
-                // Delete external cache dir (thumbnails, temp)
-                context.externalCacheDir?.deleteRecursively()
+                val sizeBefore = calcCacheSize()
+                Log.d(TAG, "clearCache — before size=${sizeBefore} bytes")
+
+                var deletedFiles = 0
+                var deletedBytes = 0L
+
+                // Helper: delete a directory recursively and count deleted files/bytes
+                fun deleteDir(dir: java.io.File?) {
+                    if (dir == null || !dir.exists()) return
+                    dir.walkTopDown().filter { it.isFile }.forEach { f ->
+                        deletedBytes += f.length()
+                        if (f.delete()) deletedFiles++
+                        else Log.w(TAG, "clearCache — could not delete ${f.absolutePath}")
+                    }
+                    dir.deleteRecursively()
+                }
+
+                // 1. Coil thumbnail/image cache
+                deleteDir(java.io.File(context.cacheDir, "image_cache"))
+                deleteDir(java.io.File(context.cacheDir, "coil_image_cache"))
+                context.externalCacheDir?.let {
+                    deleteDir(java.io.File(it, "image_cache"))
+                    deleteDir(java.io.File(it, "coil_image_cache"))
+                }
+                Log.d(TAG, "clearCache — Coil cache deleted")
+
+                // 2. ExoPlayer / Media3 buffer cache
+                deleteDir(java.io.File(context.cacheDir, "exoplayer"))
+                deleteDir(java.io.File(context.cacheDir, "media3"))
+                deleteDir(java.io.File(context.cacheDir, "video"))
+                Log.d(TAG, "clearCache — ExoPlayer cache deleted")
+
+                // 3. TDLib temporary files (NOT the session db — only the temp subdir)
+                deleteDir(java.io.File(context.filesDir, "tdlib/temp"))
+                deleteDir(java.io.File(context.filesDir, "tdlib/thumbnails"))
+                Log.d(TAG, "clearCache — TDLib temp deleted")
+
+                // 4. Entire internal cache dir (catches any remaining temp files)
+                deleteDir(context.cacheDir)
+                context.cacheDir.mkdirs() // recreate so app can write again
+
+                // 5. Entire external cache dir
+                deleteDir(context.externalCacheDir)
                 context.externalCacheDir?.mkdirs()
-                _cacheSize.value = 0L
-                Log.d(TAG, "FIX #7 — Cache cleared (temp + player + thumbnails, downloads preserved)")
+
+                val sizeAfter = calcCacheSize()
+                Log.d(TAG, "clearCache — done: deletedFiles=$deletedFiles deletedBytes=$deletedBytes sizeAfter=$sizeAfter bytes")
+                _cacheSize.value = sizeAfter
                 refreshStorageStats()
             } catch (e: Exception) {
-                Log.e(TAG, "FIX #7 — Failed to clear cache", e)
+                Log.e(TAG, "clearCache — failed", e)
             }
         }
     }
@@ -319,52 +358,72 @@ class SettingsViewModel @Inject constructor(
     fun clearAllStorage() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Delete files from custom SAF download folder if one is set
+                var deletedFiles = 0
+                var deletedBytes = 0L
+
+                // Helper: delete a file and accumulate stats
+                fun deleteFile(f: java.io.File) {
+                    if (!f.exists()) return
+                    deletedBytes += f.length()
+                    if (f.delete()) deletedFiles++
+                    else Log.w(TAG, "clearAllStorage — could not delete ${f.absolutePath}")
+                }
+
+                // Helper: delete directory contents recursively, accumulate stats
+                fun deleteDir(dir: java.io.File?) {
+                    if (dir == null || !dir.exists()) return
+                    dir.walkTopDown().filter { it.isFile }.forEach { deleteFile(it) }
+                    dir.deleteRecursively()
+                }
+
+                Log.d(TAG, "clearAllStorage — starting")
+
+                // 1. Delete files from custom SAF download folder if one is set
                 val customUriStr = downloadManager.customDownloadPath.value
                 if (customUriStr.isNotBlank()) {
                     try {
                         val uri = android.net.Uri.parse(customUriStr)
                         val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
-                        docFile?.listFiles()?.forEach { it.delete() }
-                        Log.d(TAG, "clearAllStorage — deleted files from custom download folder uri=$customUriStr")
+                        docFile?.listFiles()?.forEach { doc ->
+                            val size = doc.length()
+                            if (doc.delete()) { deletedFiles++; deletedBytes += size }
+                        }
+                        Log.d(TAG, "clearAllStorage — custom SAF folder cleared uri=$customUriStr")
                     } catch (e: Exception) {
-                        Log.w(TAG, "clearAllStorage — could not delete from custom folder", e)
+                        Log.w(TAG, "clearAllStorage — custom folder delete failed", e)
                     }
                 }
-                // Delete all downloaded video files from default app Movies dir
+
+                // 2. Delete all downloaded video files from default app Movies dir
                 context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { dir ->
-                    dir.listFiles()?.forEach { file ->
-                        val deleted = file.delete()
-                        Log.d(TAG, "clearAllStorage — deleted ${file.name}: $deleted")
-                    }
+                    dir.listFiles()?.forEach { deleteFile(it) }
                     dir.mkdirs()
+                    Log.d(TAG, "clearAllStorage — Movies dir cleared")
                 }
-                // FIX: DO NOT delete TDLib session db — only delete TDLib temp/cache subdirs
-                // Deleting the full tdlib dir would log the user out, which is incorrect behavior
-                val tdlibTemp = java.io.File(context.filesDir, "tdlib/temp")
-                if (tdlibTemp.exists()) {
-                    val deleted = tdlibTemp.deleteRecursively()
-                    Log.d(TAG, "clearAllStorage — deleted TDLib temp dir: $deleted")
-                }
-                // Delete Telegram cached media from external files dir (excluding Movies subdir)
+
+                // 3. FIX: DO NOT delete TDLib session db — only delete TDLib temp/thumbnails subdirs
+                // Deleting the full tdlib dir logs the user out — that is incorrect behavior
+                deleteDir(java.io.File(context.filesDir, "tdlib/temp"))
+                deleteDir(java.io.File(context.filesDir, "tdlib/thumbnails"))
+                Log.d(TAG, "clearAllStorage — TDLib temp/thumbnails cleared (session preserved)")
+
+                // 4. Delete Telegram cached media from external files dir (excluding Movies subdir)
                 context.getExternalFilesDir(null)?.let { dir ->
-                    dir.listFiles()?.filter { it.name != "Movies" }?.forEach { it.deleteRecursively() }
-                    Log.d(TAG, "clearAllStorage — cleared external files (non-Movies)")
+                    dir.listFiles()?.filter { it.name != "Movies" }?.forEach { deleteDir(it) }
+                    Log.d(TAG, "clearAllStorage — external files (non-Movies) cleared")
                 }
-                // Delete thumbnail cache (Coil image cache)
-                java.io.File(context.cacheDir, "image_cache").takeIf { it.exists() }?.deleteRecursively()
-                context.externalCacheDir?.let { java.io.File(it, "image_cache").takeIf { f -> f.exists() }?.deleteRecursively() }
-                // Delete player cache (ExoPlayer / Media3 buffer)
-                java.io.File(context.cacheDir, "exoplayer").takeIf { it.exists() }?.deleteRecursively()
-                java.io.File(context.cacheDir, "media3").takeIf { it.exists() }?.deleteRecursively()
-                // Delete all remaining internal cache (temp files, etc.)
-                context.cacheDir.deleteRecursively()
+
+                // 5. Delete all cache dirs (Coil, ExoPlayer, temp)
+                deleteDir(context.cacheDir)
                 context.cacheDir.mkdirs()
-                context.externalCacheDir?.deleteRecursively()
+                deleteDir(context.externalCacheDir)
                 context.externalCacheDir?.mkdirs()
-                // Clear DB download records, video metadata, watch progress — session is NOT touched
+                Log.d(TAG, "clearAllStorage — cache dirs cleared")
+
+                // 6. Clear DB download records, video metadata, watch progress — session NOT touched
                 repository.clearAllStorage()
-                Log.d(TAG, "clearAllStorage — complete; Telegram session preserved")
+
+                Log.d(TAG, "clearAllStorage — complete: deletedFiles=$deletedFiles deletedBytes=$deletedBytes; Telegram session preserved")
                 refreshStorageStats()
             } catch (e: Exception) {
                 Log.e(TAG, "clearAllStorage — failed", e)
