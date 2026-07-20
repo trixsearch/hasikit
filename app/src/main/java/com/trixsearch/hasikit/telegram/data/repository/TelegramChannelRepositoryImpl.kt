@@ -14,6 +14,9 @@ import kotlin.coroutines.resume
 
 private const val TAG = "TelegramChannelRepo"
 
+// Extracted from searchChannelMedia local scope to avoid duplicate JVM class name in suspend function
+private data class SearchBatchResult(val media: List<TelegramMedia>, val nextFromMessageId: Long)
+
 private val SUPPORTED_MIME = setOf(
     "video/mp4", "video/x-matroska", "video/webm",
     "video/quicktime", "video/x-m4v"
@@ -292,14 +295,15 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         Log.d(TAG, "searchChannelMedia START chatId=$chatId query='$query'")
         val allMedia = mutableListOf<TelegramMedia>()
 
+        // Declared once at file scope as SearchBatchResult to avoid duplicate JVM class name across Stage A and A2
+
         // Stage A: Telegram text search — searches message text and captions via TDLib index
         // This covers: caption text, message text. Does NOT cover raw file names.
         var fromMessageId = 0L
         val batchSize = 100
         var telegramSearchCount = 0
         while (true) {
-            data class BatchResult(val media: List<TelegramMedia>, val nextFromMessageId: Long)
-            val batch = suspendCancellableCoroutine<Result<BatchResult>> { cont ->
+            val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
                 clientService.send(
                     TdApi.SearchChatMessages(
                         chatId, null, query, null, fromMessageId, 0, batchSize,
@@ -310,7 +314,7 @@ class TelegramChannelRepositoryImpl @Inject constructor(
                         is TdApi.FoundChatMessages -> {
                             val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
                             Log.d(TAG, "searchChannelMedia Stage-A batch fromMsgId=$fromMessageId found=${result.messages.size} media=${media.size} next=${result.nextFromMessageId}")
-                            cont.resume(Result.success(BatchResult(media, result.nextFromMessageId)))
+                            cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
                         }
                         is TdApi.Error -> {
                             Log.e(TAG, "searchChannelMedia Stage-A error ${result.code}: ${result.message}")
@@ -337,8 +341,7 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         var docFromMessageId = 0L
         var docSearchCount = 0
         while (true) {
-            data class BatchResult(val media: List<TelegramMedia>, val nextFromMessageId: Long)
-            val batch = suspendCancellableCoroutine<Result<BatchResult>> { cont ->
+            val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
                 clientService.send(
                     TdApi.SearchChatMessages(
                         chatId, null, query, null, docFromMessageId, 0, batchSize,
@@ -351,13 +354,13 @@ class TelegramChannelRepositoryImpl @Inject constructor(
                                 .filter { it.id !in seenIds }
                                 .mapNotNull { it.toTelegramMedia(chatId) }
                             Log.d(TAG, "searchChannelMedia Stage-A2 doc batch fromMsgId=$docFromMessageId found=${result.messages.size} media=${media.size}")
-                            cont.resume(Result.success(BatchResult(media, result.nextFromMessageId)))
+                            cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
                         }
                         is TdApi.Error -> {
                             Log.w(TAG, "searchChannelMedia Stage-A2 doc error ${result.code}: ${result.message}")
-                            cont.resume(Result.success(BatchResult(emptyList(), 0L)))
+                            cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
                         }
-                        else -> cont.resume(Result.success(BatchResult(emptyList(), 0L)))
+                        else -> cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
                     }
                 }
                 cont.invokeOnCancellation {}

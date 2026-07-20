@@ -342,23 +342,20 @@ class HasikitPlayer @Inject constructor(
         Log.d(TAG, "[STOP] done")
     }
 
-    // FIX: seekTo — for MKV and all formats, clamp position and log seek details
-    // MKV seek was restarting from beginning because seekTo was called before STATE_READY.
-    // The fix: if player is still in STATE_IDLE or STATE_BUFFERING, defer seek until STATE_READY.
+    // Bug fix #6: seekTo — log duration, currentPosition, and targetSeekPosition for every seek
     fun seekTo(position: Long) {
         val player = exoPlayer ?: run { Log.w(TAG, "[SEEK] skipped — ExoPlayer is null"); return }
         val dur = player.duration.coerceAtLeast(0L)
         val clamped = position.coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE)
         val state = player.playbackState
-        Log.d(TAG, "[SEEK] requested=${position}ms clamped=${clamped}ms dur=${dur}ms state=$state isSeekable=${player.isCurrentMediaItemSeekable}")
+        Log.d(TAG, "[SEEK] requestedPos=${position}ms targetPos=${clamped}ms currentPos=${player.currentPosition}ms duration=${dur}ms state=$state isSeekable=${player.isCurrentMediaItemSeekable} isLocal=${player.currentMediaItem?.localConfiguration?.uri?.scheme == \"file\"}")
         when (state) {
             Player.STATE_READY, Player.STATE_ENDED -> {
-                // Player is ready — seek immediately
                 player.seekTo(clamped)
-                Log.d(TAG, "[SEEK] immediate seek to ${clamped}ms")
+                Log.d(TAG, "[SEEK] immediate seek executed to ${clamped}ms")
             }
             Player.STATE_BUFFERING, Player.STATE_IDLE -> {
-                // Player not ready yet — queue seek via listener so it fires once STATE_READY is reached
+                // Defer seek until STATE_READY — seeking before ready restarts from 0
                 Log.d(TAG, "[SEEK] deferred — waiting for STATE_READY before seeking to ${clamped}ms")
                 player.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -392,6 +389,8 @@ class HasikitPlayer @Inject constructor(
 
     fun selectAudioTrack(groupIndex: Int) {
         val player = exoPlayer ?: return
+        // Bug fix #3: restore volume when user selects a real audio track after muting
+        unmuteIfMuted()
         val params = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
         val tracks = player.currentTracks
@@ -421,9 +420,32 @@ class HasikitPlayer @Inject constructor(
         player.trackSelectionParameters = params.build()
     }
 
+    // Bug fix #3: Mute state — track separately so selectAudioTrack can restore volume
+    private var isMuted = false
+    private var volumeBeforeMute = 100
+
+    // Bug fix #3: Mute audio — sets ExoPlayer volume to 0 and records mute state
+    fun muteAudio() {
+        isMuted = true
+        exoPlayer?.volume = 0f
+        Log.d(TAG, "[VOLUME] muted")
+    }
+
+    // Bug fix #3: Restore volume when user selects an audio track after muting
+    fun unmuteIfMuted() {
+        if (isMuted) {
+            isMuted = false
+            val exoVol = if (volumeBeforeMute <= 100) 1f else volumeBeforeMute / 100f
+            exoPlayer?.volume = exoVol
+            Log.d(TAG, "[VOLUME] unmuted restored to $volumeBeforeMute% exoVol=$exoVol")
+        }
+    }
+
     // 0-100 = system volume, 101-200 = ExoPlayer software boost (1x-2x)
     fun setVolume(percent: Int) {
         val clamped = percent.coerceIn(0, 200)
+        // Bug fix #3: track last non-zero volume so mute/unmute can restore correctly
+        if (clamped > 0) { isMuted = false; volumeBeforeMute = clamped }
         val exoVol = if (clamped <= 100) 1f else clamped / 100f
         exoPlayer?.volume = exoVol
         Log.d(TAG, "[VOLUME] $clamped% exoVol=$exoVol")

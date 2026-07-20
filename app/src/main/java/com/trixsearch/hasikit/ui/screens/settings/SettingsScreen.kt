@@ -259,18 +259,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // FIX #7 — Clear thumbnail cache only (Coil image cache directory)
+    // Bug fix #4: Clear thumbnail cache and signal HomeViewModel to reload thumbnails
     fun clearThumbnailCache() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Coil stores thumbnails in cacheDir/image_cache by default
                 val coilDir = java.io.File(context.cacheDir, "image_cache")
                 if (coilDir.exists()) coilDir.deleteRecursively()
-                // Also clear external cache thumbnails
                 context.externalCacheDir?.let { ext ->
                     java.io.File(ext, "image_cache").takeIf { it.exists() }?.deleteRecursively()
                 }
                 Log.d(TAG, "FIX #7 — Thumbnail cache cleared")
+                // Bug fix #4: increment version so HomeViewModel observes and re-fetches thumbnails
+                downloadManager.thumbnailCacheVersion.value++
+                Log.d(TAG, "[THUMBNAIL] thumbnailCacheVersion incremented to ${downloadManager.thumbnailCacheVersion.value}")
                 refreshStorageStats()
             } catch (e: Exception) {
                 Log.e(TAG, "FIX #7 — Failed to clear thumbnail cache", e)

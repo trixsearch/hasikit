@@ -46,6 +46,13 @@ class HasikitDownloadManager @Inject constructor(
     // Custom download path — set by SettingsViewModel when user picks a folder
     val customDownloadPath = MutableStateFlow("")
 
+    // Gallery visibility — synced from SettingsViewModel; used by DownloadWorker to decide storage location
+    val galleryVisible = MutableStateFlow(false)
+
+    // Bug fix #4: Thumbnail cache invalidation signal — SettingsViewModel increments this after
+    // clearing thumbnail cache; HomeViewModel observes it and calls invalidateAndReloadThumbnails()
+    val thumbnailCacheVersion = MutableStateFlow(0)
+
     init {
         // Sync in-memory state from Room DB on startup
         scope.launch {
@@ -56,7 +63,8 @@ class HasikitDownloadManager @Inject constructor(
         Log.d(TAG, "HasikitDownloadManager initialized (WorkManager mode)")
     }
 
-    // Start a download — enqueues a WorkManager worker that survives app kills and reboots
+    // Bug fix #12: Download location — always read customDownloadPath at enqueue time
+    // so re-downloads after deletion use the current selected folder, not a stale path
     fun startDownload(video: Video) {
         val fileId = video.telegramFileId.toLongOrNull()
         if (fileId == null || fileId == 0L) {
@@ -66,14 +74,15 @@ class HasikitDownloadManager @Inject constructor(
         Log.d(TAG, "startDownload videoId=${video.id} fileId=$fileId title='${video.title}'")
 
         scope.launch {
-            // Persist initial QUEUED state so UI shows download started immediately
             repository.saveDownload(
                 DownloadTask(videoId = video.id, state = DownloadState.QUEUED, progress = 0f)
             )
             repository.insertVideo(video)
         }
 
+        // Bug fix #12: read current customDownloadPath at enqueue time — never cache old path
         val destDir = customDownloadPath.value.takeIf { it.isNotBlank() }
+        Log.d(TAG, "[DOWNLOAD_PATH] startDownload videoId=${video.id} destDir=$destDir")
         val inputData = DownloadWorker.buildInputData(
             videoId = video.id,
             telegramFileId = video.telegramFileId,
@@ -133,7 +142,9 @@ class HasikitDownloadManager @Inject constructor(
             repository.saveDownload(task.copy(state = DownloadState.DOWNLOADING))
         }
 
+        // Bug fix #12: read current customDownloadPath at resume time — user may have changed folder
         val destDir = customDownloadPath.value.takeIf { it.isNotBlank() }
+        Log.d(TAG, "[DOWNLOAD_PATH] resumeDownload videoId=${video.id} destDir=$destDir")
         val inputData = DownloadWorker.buildInputData(
             videoId = video.id,
             telegramFileId = video.telegramFileId,

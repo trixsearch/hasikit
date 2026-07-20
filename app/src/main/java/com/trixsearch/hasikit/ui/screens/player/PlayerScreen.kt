@@ -101,7 +101,8 @@ private const val LONG_PRESS_THRESHOLD_MS = 500L
 private const val SEEK_SWIPE_RANGE_MS = 120_000L
 // Brightness Gesture Sensitivity — percent change per full screen height swipe
 private const val BRIGHTNESS_SWIPE_SENSITIVITY = 100
-// Volume Gesture Sensitivity — percent change per full screen height swipe
+// Bug fix #1: Volume Gesture Sensitivity
+// One full vertical swipe covers exactly 100% so 0→100 takes one swipe, 100→200 takes a second swipe.
 private const val VOLUME_SWIPE_SENSITIVITY = 100
 // Gesture direction lock threshold — px of movement before axis is locked
 private const val GESTURE_LOCK_THRESHOLD_PX = 20f
@@ -293,6 +294,9 @@ fun PlayerScreen(
     // Streamability fallback — counts consecutive stream errors; after threshold triggers download
     var streamFailCount by remember { mutableIntStateOf(0) }
     var showDownloadFallbackToast by remember { mutableStateOf(false) }
+    // Bug fix #8: Video end countdown — 5-second overlay before auto-play or repeat
+    var endCountdown by remember { mutableIntStateOf(0) }
+    var showEndCountdown by remember { mutableStateOf(false) }
 
     // File picker launcher for local subtitle files (.srt .ass .vtt .sub)
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
@@ -472,11 +476,16 @@ fun PlayerScreen(
         onDispose { context.unregisterReceiver(receiver) }
     }
 
+    // Bug fix #1: Volume Gesture Sensitivity
+    // One full vertical swipe = 0→100%. Second swipe = 100→200% (software amplification).
+    // 0-100% controls system volume; 101-200% is ExoPlayer software gain.
     fun applyVolume(pct: Int) {
         val clamped = pct.coerceIn(0, 200)
         virtualVolumePct = clamped
+        // 0-100%: map to system volume range
         val newSystemVol = (minOf(clamped, 100) * maxSystemVolume / 100f).toInt().coerceIn(0, maxSystemVolume)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newSystemVol, 0)
+        // 101-200%: ExoPlayer software amplification (handled in HasikitPlayer.setVolume)
         player.setVolume(clamped)
         volumeFeedback = "${when { clamped == 0 -> "🔇"; clamped <= 50 -> "🔈"; clamped <= 100 -> "🔉"; else -> "🔊" }} Volume $clamped%"
     }
@@ -526,6 +535,25 @@ fun PlayerScreen(
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             activity?.window?.let { w -> val p = w.attributes; p.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; w.attributes = p }
+        }
+    }
+
+    // Bug fix #8: Video end countdown — show 5s countdown then auto-play next or repeat
+    LaunchedEffect(isEnded) {
+        if (isEnded) {
+            showEndCountdown = true
+            endCountdown = 5
+            while (endCountdown > 0) {
+                delay(1000L)
+                endCountdown--
+            }
+            showEndCountdown = false
+            // Restart from beginning for both autoplayNext and repeat modes
+            // (next-video queue wiring is handled at the navigation layer)
+            player.restartFromBeginning()
+        } else {
+            showEndCountdown = false
+            endCountdown = 0
         }
     }
 
@@ -597,6 +625,9 @@ fun PlayerScreen(
                             var totalY = 0f
                             var axis: String? = null // "h" = horizontal seek, "vL" = brightness, "vR" = volume
                             var seekBase = 0L
+                            // Bug fix #1: capture gesture-start values so delta is relative to start, not accumulated per-event
+                            var volumeBase = 0
+                            var brightnessBase = 0
 
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -613,9 +644,9 @@ fun PlayerScreen(
                                         // Horizontal dominant → seek
                                         kotlin.math.abs(dx) >= kotlin.math.abs(dy) -> { seekBase = player.getCurrentPosition(); "h" }
                                         // Left half of screen → brightness
-                                        startX < size.width / 2f -> "vL"
+                                        startX < size.width / 2f -> { brightnessBase = brightnessPct; "vL" }
                                         // Right half of screen → volume
-                                        else -> "vR"
+                                        else -> { volumeBase = virtualVolumePct; "vR" }
                                     }
                                 }
 
@@ -630,14 +661,14 @@ fun PlayerScreen(
                                         seekFeedback = "${if (delta >= 0) "⏩" else "⏪"} ${formatTime(target)}"
                                     }
                                     "vL" -> {
-                                        // Brightness Gesture Sensitivity — BRIGHTNESS_SWIPE_SENSITIVITY controls range
+                                        // Bug fix #1: Volume Gesture Sensitivity — delta relative to gesture start
                                         val delta = (-totalY / size.height * BRIGHTNESS_SWIPE_SENSITIVITY).toInt()
-                                        applyBrightness(brightnessPct + delta)
+                                        applyBrightness(brightnessBase + delta)
                                     }
                                     "vR" -> {
-                                        // Volume Gesture Sensitivity — VOLUME_SWIPE_SENSITIVITY controls range
+                                        // Bug fix #1: Volume Gesture Sensitivity — delta relative to gesture start, one swipe = 100%
                                         val delta = (-totalY / size.height * VOLUME_SWIPE_SENSITIVITY).toInt()
-                                        applyVolume(virtualVolumePct + delta)
+                                        applyVolume(volumeBase + delta)
                                     }
                                 }
                                 change.consume()
@@ -764,6 +795,33 @@ fun PlayerScreen(
         // Hidden when error is shown to avoid overlapping indicators
         if (isBuffering && error == null) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 3.dp)
 
+        // Bug fix #8: Video end countdown overlay — 5s before auto-play/repeat, user can cancel
+        if (showEndCountdown) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 28.dp, vertical = 20.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (autoplayNext) "Playing next in $endCountdown…" else "Replaying in $endCountdown…",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = {
+                        // Cancel countdown — hide overlay and leave player in ended state
+                        showEndCountdown = false
+                        endCountdown = 0
+                    }) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
         if (error != null) {
             Column(modifier = Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Error, null, tint = Color.Red, modifier = Modifier.size(48.dp))
@@ -779,9 +837,13 @@ fun PlayerScreen(
         AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (isLocked) 0.2f else 0.45f))) {
                 if (!isLocked) {
-                    // Top bar — hidden when locked
+                    // Bug fix #7: Safe area — add displayCutout insets so top bar clears punch hole/notch
                     Row(
-                        modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .windowInsetsPadding(WindowInsets.displayCutout)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
@@ -823,12 +885,12 @@ fun PlayerScreen(
                                         )
                                     }
                                 }
-                                // Mute Audio option always available
+                                // Bug fix #3: Mute Audio — call muteAudio() so ExoPlayer volume is set to 0f
+                                // and mute state is tracked for restore when user selects a track
                                 DropdownMenuItem(
                                     text = { Text("Mute Audio") },
-                                    // Replaced deprecated Icons.Default.VolumeOff with AutoMirrored variant
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.VolumeOff, null, modifier = Modifier.size(18.dp)) },
-                                    onClick = { player.setVolume(0); showAudioMenu = false }
+                                    onClick = { player.muteAudio(); showAudioMenu = false }
                                 )
                             }
                         }

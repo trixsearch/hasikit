@@ -169,12 +169,18 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
-        // Reload when user sources change, but only if already authenticated
         viewModelScope.launch {
             sourceConfig.userSourcesFlow.drop(1).collect {
                 if (authRepository.authState.value is AuthState.Authenticated && !isLoadingAllSources) {
                     loadAllSources()
                 }
+            }
+        }
+        // Bug fix #4: observe thumbnailCacheVersion — reload thumbnails when cache is cleared from Settings
+        viewModelScope.launch {
+            downloadManager.thumbnailCacheVersion.drop(1).collect {
+                Log.d(TAG, "[THUMBNAIL] thumbnailCacheVersion changed — invalidating and reloading")
+                invalidateAndReloadThumbnails()
             }
         }
     }
@@ -324,9 +330,71 @@ class HomeViewModel @Inject constructor(
                 .forEach { media ->
                     val fileId = media.thumbnailFileId ?: return@forEach
                     val path = channelRepository.downloadThumbnail(fileId)
+                    Log.d(TAG, "[THUMBNAIL] fetched fileId=$fileId path=$path")
                     _thumbnailCache.value = _thumbnailCache.value + (fileId to path)
                 }
         }
+    }
+
+    // Bug fix #4: Thumbnail reload — invalidate in-memory cache and re-fetch all thumbnails
+    // Called after clearing thumbnail cache in AdvancedSettings so UI refreshes without restart
+    fun invalidateAndReloadThumbnails() {
+        Log.d(TAG, "[THUMBNAIL] invalidateAndReloadThumbnails — clearing cache and re-fetching")
+        _thumbnailCache.value = emptyMap()
+        val allMedia = _sourcePages.value.flatMap { it.media }
+        fetchThumbnails(allMedia)
+    }
+
+    // Bug fix #9/#10: Telegram search — search TDLib directly across all resolved sources
+    // Returns video results from file name, caption, and full channel history scan
+    private val _searchResults = MutableStateFlow<List<com.trixsearch.hasikit.domain.model.Video>>(emptyList())
+    val searchResults: StateFlow<List<com.trixsearch.hasikit.domain.model.Video>> = _searchResults
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching
+
+    fun searchTelegram(query: String) {
+        if (query.isBlank()) { _searchResults.value = emptyList(); return }
+        viewModelScope.launch {
+            _isSearching.value = true
+            _searchResults.value = emptyList()
+            Log.d(TAG, "[SEARCH] Telegram search query='$query' sources=${_sourcePages.value.size}")
+            val results = mutableListOf<com.trixsearch.hasikit.domain.model.Video>()
+            val seenIds = mutableSetOf<String>()
+            _sourcePages.value.forEach { page ->
+                val mediaList = channelRepository.searchChannelMedia(page.chatId, query, 100)
+                    .getOrNull() ?: return@forEach
+                Log.d(TAG, "[SEARCH] source='${page.source.displayName}' results=${mediaList.size}")
+                mediaList.forEach { media ->
+                    val id = "${media.channelId}_${media.messageId}"
+                    if (seenIds.add(id)) {
+                        results.add(
+                            com.trixsearch.hasikit.domain.model.Video(
+                                id = id,
+                                title = media.title.ifBlank { media.fileName },
+                                thumbnail = _thumbnailCache.value[media.thumbnailFileId],
+                                videoUrl = "",
+                                telegramFileId = media.fileId.toString(),
+                                duration = media.duration.toLong() * 1000L,
+                                size = media.size,
+                                localPath = null,
+                                isDownloaded = false,
+                                sourceLabel = page.source.displayName,
+                                isStreamable = media.isStreamable
+                            )
+                        )
+                    }
+                }
+            }
+            Log.d(TAG, "[SEARCH] total results=${results.size} for query='$query'")
+            _searchResults.value = results
+            _isSearching.value = false
+        }
+    }
+
+    fun clearSearch() {
+        _searchResults.value = emptyList()
+        _isSearching.value = false
     }
 
     fun startDownload(video: Video) {

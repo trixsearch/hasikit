@@ -56,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -155,6 +156,33 @@ class LibraryViewModel @Inject constructor(
                 }.also { Log.d(TAG, "activeDownloads updated: ${it.size} items") }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Bug fix #11: Expose favorites from Room so Library screen can display them
+    val favorites: StateFlow<List<com.trixsearch.hasikit.data.local.entities.FavoriteEntity>> =
+        repository.getAllFavorites()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Bug fix #11: Expose watch later from Room so Library screen can display them
+    val watchLater: StateFlow<List<com.trixsearch.hasikit.data.local.entities.WatchLaterEntity>> =
+        repository.getAllWatchLater()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Bug fix #11: Expose watch history from Room so Library screen can display them
+    val watchHistory: StateFlow<List<com.trixsearch.hasikit.data.local.entities.WatchHistoryEntity>> =
+        repository.getAllWatchHistory()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun removeFavorite(videoId: String) {
+        viewModelScope.launch { repository.removeFavorite(videoId) }
+    }
+
+    fun removeFromWatchLater(videoId: String) {
+        viewModelScope.launch { repository.removeFromWatchLater(videoId) }
+    }
+
+    fun removeFromHistory(videoId: String) {
+        viewModelScope.launch { repository.removeFromWatchHistory(videoId) }
+    }
+
     fun deleteDownload(videoId: String) {
         Log.d(TAG, "deleteDownload videoId=$videoId")
         downloadManager.deleteDownload(videoId)
@@ -183,14 +211,18 @@ fun LibraryScreen(
 ) {
     val downloadedItems by viewModel.downloadedItems.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
+    // Bug fix #11: collect favorites, watch later, history from Room
+    val favorites by viewModel.favorites.collectAsState()
+    val watchLater by viewModel.watchLater.collectAsState()
+    val watchHistory by viewModel.watchHistory.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
-    // Library sort order — default newest first
     var sortOrder by remember { mutableStateOf(LibrarySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
-    // Bulk selection mode — long-press a card to enter, or tap the select icon
     var selectionMode by remember { mutableStateOf(false) }
-    // Copy-on-write set for selected video IDs
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    // Bug fix #11: tab selection — 0=Downloads, 1=Favorites, 2=Watch Later, 3=History
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Downloads", "Favorites", "Watch Later", "History")
 
     // Apply sort to downloaded items
     val sortedDownloaded = remember(downloadedItems, sortOrder) {
@@ -376,77 +408,166 @@ fun LibraryScreen(
                         )
                     )
                 }
-            }
-        }
-    ) { padding ->
-        if (downloadedItems.isEmpty() && activeDownloads.isEmpty()) {
-            EmptyLibraryState(modifier = Modifier.padding(padding))
-        } else {
-            val libraryListState = androidx.compose.foundation.lazy.rememberLazyListState()
-            // Fast scroller wraps the LazyColumn for quick navigation through long download lists
-            FastScrollerBox(
-                listState = libraryListState,
-                modifier = Modifier.padding(padding)
-            ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = libraryListState,
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                if (activeDownloads.isNotEmpty()) {
-                    item { SectionLabel("Downloading", Icons.Default.Downloading) }
-                    items(activeDownloads, key = { it.video.id + "_active" }) { item ->
-                        ActiveDownloadCard(
-                            item = item,
-                            onPause = { viewModel.pauseDownload(item.video.id) },
-                            onResume = { viewModel.resumeDownload(item.video) }
+                // Bug fix #11: tab row for Downloads / Favorites / Watch Later / History
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.material3.ScrollableTabRow(
+                    selectedTabIndex = selectedTab,
+                    edgePadding = 0.dp
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title, style = MaterialTheme.typography.labelMedium) }
                         )
                     }
                 }
-                if (filteredDownloaded.isNotEmpty()) {
-                    // Use local val to avoid size() parse ambiguity in string template
-                    val dlCount = filteredDownloaded.size
-                    item { SectionLabel("Downloaded ($dlCount)", Icons.Default.DownloadDone) }
-                    items(filteredDownloaded, key = { it.video.id }) { item ->
-                        val isSelected = item.video.id in selectedIds
-                        DownloadedVideoCard(
-                            item = item,
-                            isSelected = isSelected,
-                            selectionMode = selectionMode,
-                            onPlay = {
-                                if (selectionMode) {
-                                    // Copy-on-write toggle for set membership
-                                    selectedIds = if (isSelected) selectedIds - item.video.id else selectedIds + item.video.id
-                                } else {
-                                    Log.d(TAG, "Play offline videoId=${item.video.id}")
-                                    navController.navigate(Screen.Player.createRoute(item.video.id))
+            }
+        }
+    ) { padding ->
+        // Bug fix #11: show content based on selected tab
+        when (selectedTab) {
+            0 -> {
+                // Downloads tab — existing downloads + active downloads list
+                if (downloadedItems.isEmpty() && activeDownloads.isEmpty()) {
+                    EmptyLibraryState(modifier = Modifier.padding(padding))
+                } else {
+                    val libraryListState = rememberLazyListState()
+                    FastScrollerBox(listState = libraryListState, modifier = Modifier.padding(padding)) {
+                        LazyColumn(modifier = Modifier.fillMaxSize(), state = libraryListState, contentPadding = PaddingValues(bottom = 24.dp)) {
+                            if (activeDownloads.isNotEmpty()) {
+                                item { SectionLabel("Downloading", Icons.Default.Downloading) }
+                                items(activeDownloads, key = { it.video.id + "_active" }) { item ->
+                                    ActiveDownloadCard(item = item, onPause = { viewModel.pauseDownload(item.video.id) }, onResume = { viewModel.resumeDownload(item.video) })
                                 }
-                            },
-                            onDelete = { viewModel.deleteDownload(item.video.id) },
-                            onRedownload = { viewModel.retryDownload(item.video) },
-                            onLongPress = {
-                                selectionMode = true
-                                // Copy-on-write add
-                                selectedIds = selectedIds + item.video.id
                             }
-                        )
-                    }
-                } else if (searchQuery.isNotBlank()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(8.dp))
-                                Text("No results for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (filteredDownloaded.isNotEmpty()) {
+                                val dlCount = filteredDownloaded.size
+                                item { SectionLabel("Downloaded ($dlCount)", Icons.Default.DownloadDone) }
+                                items(filteredDownloaded, key = { it.video.id }) { item ->
+                                    val isSelected = item.video.id in selectedIds
+                                    DownloadedVideoCard(
+                                        item = item, isSelected = isSelected, selectionMode = selectionMode,
+                                        onPlay = {
+                                            if (selectionMode) selectedIds = if (isSelected) selectedIds - item.video.id else selectedIds + item.video.id
+                                            else navController.navigate(Screen.Player.createRoute(item.video.id))
+                                        },
+                                        onDelete = { viewModel.deleteDownload(item.video.id) },
+                                        onRedownload = { viewModel.retryDownload(item.video) },
+                                        onLongPress = { selectionMode = true; selectedIds = selectedIds + item.video.id }
+                                    )
+                                }
+                            } else if (searchQuery.isNotBlank()) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(Modifier.height(8.dp))
+                                            Text("No results for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            } // end LazyColumn
-            } // end FastScrollerBox
+            }
+            1 -> {
+                // Bug fix #11: Favorites tab
+                if (favorites.isEmpty()) {
+                    Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No favorites yet", style = MaterialTheme.typography.titleMedium)
+                            Text("Long-press a video to add it to favorites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        item { SectionLabel("Favorites (${favorites.size})", Icons.Default.VideoLibrary) }
+                        items(favorites, key = { it.videoId }) { fav ->
+                            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(model = fav.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(fav.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(fav.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { viewModel.removeFavorite(fav.videoId) }) {
+                                        Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            2 -> {
+                // Bug fix #11: Watch Later tab
+                if (watchLater.isEmpty()) {
+                    Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Watch Later is empty", style = MaterialTheme.typography.titleMedium)
+                            Text("Save videos to watch them later", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        item { SectionLabel("Watch Later (${watchLater.size})", Icons.Default.VideoLibrary) }
+                        items(watchLater, key = { it.videoId }) { item ->
+                            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(model = item.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(item.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { viewModel.removeFromWatchLater(item.videoId) }) {
+                                        Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            3 -> {
+                // Bug fix #11: History tab
+                if (watchHistory.isEmpty()) {
+                    Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No watch history", style = MaterialTheme.typography.titleMedium)
+                            Text("Videos you watch will appear here", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        item { SectionLabel("History (${watchHistory.size})", Icons.Default.VideoLibrary) }
+                        items(watchHistory, key = { it.videoId }) { item ->
+                            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(model = item.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(item.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { viewModel.removeFromHistory(item.videoId) }) {
+                                        Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

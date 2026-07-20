@@ -71,15 +71,21 @@ fun HomeScreen(
     val noAccessMessage by viewModel.noAccessMessage.collectAsState()
     val availableSources by viewModel.availableSources.collectAsState()
     val selectedSourceFilter by viewModel.selectedSourceFilter.collectAsState()
+    // Bug fix #9/#10: Telegram search results and loading state
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    // Use ViewModel's prefetch threshold so scroll trigger matches pagination config
     listState.OnNearBottom(threshold = viewModel.prefetchThreshold) { viewModel.loadMore() }
 
-    val filteredVideos = remember(videos, searchQuery) {
-        if (searchQuery.isBlank()) videos
-        else videos.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    // Bug fix #9/#10: trigger Telegram search when query changes, clear when blank
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) viewModel.clearSearch()
+        else viewModel.searchTelegram(searchQuery)
     }
+
+    // Bug fix #9/#10: use Telegram search results when query is active, else show full feed
+    val displayVideos = if (searchQuery.isBlank()) videos else searchResults
     val downloadedVideos = remember(videos) { videos.filter { it.isDownloaded } }
     val recentlyAdded = remember(videos) { videos.take(5) }
 
@@ -218,10 +224,20 @@ fun HomeScreen(
                     return@LazyColumn
                 }
 
-                // Search results
+                // Search results — uses Telegram search (bug fix #9/#10)
                 if (searchQuery.isNotBlank()) {
                     item { SectionHeader("Results for \"$searchQuery\"") }
-                    if (filteredVideos.isEmpty()) {
+                    if (isSearching) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("Searching Telegram…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    } else if (displayVideos.isEmpty()) {
                         item {
                             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -232,8 +248,7 @@ fun HomeScreen(
                             }
                         }
                     } else {
-                        items(filteredVideos, key = { "search_${it.id}" }) { video ->
-                            // Pass download state and controls to search result cards
+                        items(displayVideos, key = { "search_${it.id}" }) { video ->
                             val dlTask = viewModel.downloadTasks.collectAsState().value[video.id]
                             HorizontalVideoCard(
                                 video = video,
