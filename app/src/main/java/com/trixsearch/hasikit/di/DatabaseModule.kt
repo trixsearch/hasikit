@@ -22,7 +22,10 @@ object DatabaseModule {
             context,
             HasikitDatabase::class.java,
             "hasikit_db"
-        ).build()
+        )
+            // Migration 1→2: adds favorites, watch_later, watch_history tables
+            .addMigrations(HasikitDatabase.MIGRATION_1_2)
+            .build()
     }
 
     @Provides

@@ -57,7 +57,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.download.HasikitDownloadManager
@@ -137,7 +136,7 @@ private const val STREAM_FAIL_THRESHOLD = 2
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val repository: VideoRepository,
-    // FIX #6 — Inject download manager to auto-download streamable videos during playback
+    // downloadManager kept for future explicit download actions from player
     private val downloadManager: HasikitDownloadManager,
     private val channelRepository: TelegramChannelRepository,
     private val telegramClientService: TelegramClientService
@@ -151,13 +150,8 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    // FIX #6 — Trigger background download when streaming begins for a streamable video
-    fun autoDownloadIfStreamable(video: Video) {
-        if (video.isStreamable && !video.isDownloaded) {
-            Log.d(TAG, "FIX #6 — autoDownloadIfStreamable videoId=${video.id}")
-            downloadManager.startBackgroundDownloadIfNeeded(video)
-        }
-    }
+    // Hidden cache removed: streaming videos are streamed only.
+    // Download is an explicit user action from HomeScreen or LibraryScreen.
 
     suspend fun getInitialPosition(videoId: String): Long = withContext(Dispatchers.IO) {
         repository.getWatchProgress(videoId)?.lastPosition ?: 0L
@@ -255,7 +249,6 @@ fun PlayerScreen(
     videoUrl: String,
     localPath: String?,
     telegramFileId: String = "",
-    // FIX #6 — Pass streamability and download state so auto-download can be triggered
     isStreamable: Boolean = true,
     isDownloaded: Boolean = false,
     onBack: () -> Unit,
@@ -536,33 +529,13 @@ fun PlayerScreen(
         }
     }
 
-    // Streamability fallback — if stream fails twice, show toast and trigger download workflow
+    // Streamability fallback — if stream fails twice, show toast
     LaunchedEffect(error) {
         if (error != null) {
             streamFailCount++
             if (streamFailCount >= STREAM_FAIL_THRESHOLD) {
                 showDownloadFallbackToast = true
             }
-        }
-    }
-
-    // FIX #6 — Auto-download streamable video when playback begins
-    // Triggered once when isPlaying becomes true for the first time in this session
-    LaunchedEffect(isPlaying) {
-        if (isPlaying && isStreamable && !isDownloaded && telegramFileId.isNotBlank()) {
-            val video = Video(
-                id = videoId,
-                title = title,
-                thumbnail = null,
-                videoUrl = videoUrl,
-                telegramFileId = telegramFileId,
-                duration = 0L,
-                size = 0L,
-                localPath = localPath,
-                isStreamable = true,
-                isDownloaded = false
-            )
-            viewModel.autoDownloadIfStreamable(video)
         }
     }
 
@@ -581,18 +554,16 @@ fun PlayerScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                // FIX: black screen — inflate PlayerView from XML so app:surface_type="texture_view"
+                // can be applied. PlayerView in Media3 1.5.1 does not expose setSurfaceType() or
+                // setVideoTextureView() as public APIs; the only supported way to set surface type
+                // programmatically is via XML inflation.
+                val inflated = android.view.LayoutInflater.from(ctx)
+                    .inflate(com.trixsearch.hasikit.R.layout.player_view_texture, null, false) as PlayerView
+                inflated.apply {
                     this.player = player.getPlayerInstance()
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    // FIX: black screen — use TextureView instead of default SurfaceView.
-                    // SurfaceView can fail to render the first frame on some devices/ROMs because
-                    // the surface is created asynchronously and may not be ready when ExoPlayer
-                    // starts rendering. TextureView renders into a hardware-accelerated texture
-                    // that is always available immediately after view attachment.
-                    setVideoSurfaceView(null)
-                    videoSurfaceType = PlayerView.VIDEO_SURFACE_TYPE_TEXTURE_VIEW
-                    // Force a layout pass so the TextureView surface is allocated before playback starts
                     post { requestLayout(); invalidate() }
                 }
             },
@@ -789,7 +760,9 @@ fun PlayerScreen(
         fitOverlayText?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
         lockedTapMessage?.let { FeedbackPill(it, Modifier.align(Alignment.Center).offset(y = (-80).dp)) }
 
-        if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 3.dp)
+        // Buffering indicator — shown centered whenever player is in BUFFERING state
+        // Hidden when error is shown to avoid overlapping indicators
+        if (isBuffering && error == null) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 3.dp)
 
         if (error != null) {
             Column(modifier = Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -38,6 +38,7 @@ import com.trixsearch.hasikit.domain.model.DownloadState
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
 import com.trixsearch.hasikit.ui.components.FastScrollerBox
+import com.trixsearch.hasikit.ui.components.FeedSkeletonLoader
 import com.trixsearch.hasikit.ui.navigation.Screen
 import com.trixsearch.hasikit.ui.theme.HasikitTheme
 
@@ -158,6 +159,13 @@ fun HomeScreen(
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize()
         ) {
+            // Skeleton loader — shown on first open until the first full page of videos is ready
+            // Prevents single-item startup state and blank screen flash
+            if (isLoading && videos.isEmpty()) {
+                FeedSkeletonLoader()
+                return@PullToRefreshBox
+            }
+
             // Fast scroller wraps the LazyColumn so the thumb overlays on the right side
             FastScrollerBox(listState = listState) {
                 LazyColumn(
@@ -165,7 +173,8 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
-                // Initial loading
+                // Initial loading — replaced by skeleton above, this branch is now unreachable
+                // but kept as safety fallback
                 if (isLoading && videos.isEmpty()) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {

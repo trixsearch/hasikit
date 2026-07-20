@@ -2,6 +2,8 @@ package com.trixsearch.hasikit
 
 import android.app.Application
 import android.util.Log
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import com.trixsearch.hasikit.telegram.service.TelegramClientService
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -9,9 +11,18 @@ import javax.inject.Inject
 private const val TAG = "HasikitApp"
 
 @HiltAndroidApp
-class HasikitApp : Application() {
+// Implement Configuration.Provider so WorkManager uses HiltWorkerFactory for DI injection
+class HasikitApp : Application(), Configuration.Provider {
 
     @Inject lateinit var telegramClientService: TelegramClientService
+    // HiltWorkerFactory — required for @HiltWorker injection in DownloadWorker
+    @Inject lateinit var workerFactory: HiltWorkerFactory
+
+    // Provide WorkManager configuration with Hilt's worker factory
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onCreate() {
         super.onCreate()

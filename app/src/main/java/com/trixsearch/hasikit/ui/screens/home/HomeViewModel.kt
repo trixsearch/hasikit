@@ -20,6 +20,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
@@ -76,7 +77,30 @@ class HomeViewModel @Inject constructor(
         repository.getAllWatchProgress()
             .map { progressList ->
                 progressList.take(5).mapNotNull { progress ->
-                    repository.getVideoById(progress.videoId)?.let { it to progress }
+                    val video = repository.getVideoById(progress.videoId) ?: return@mapNotNull null
+
+                    // Continue Watching cleanup: if the video is marked downloaded but the file
+                    // no longer exists on disk, treat it as not downloaded
+                    val fileExists = video.localPath?.let { java.io.File(it).exists() } ?: false
+                    val effectivelyDownloaded = video.isDownloaded && fileExists
+
+                    // If video is not streamable AND not effectively downloaded, the entry is dead—
+                    // remove it from Continue Watching to prevent dead entries
+                    if (!video.isStreamable && !effectivelyDownloaded) {
+                        Log.d(TAG, "continueWatching: removing dead entry videoId=${video.id} — not streamable and file missing")
+                        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            repository.deleteWatchProgress(video.id)
+                        }
+                        return@mapNotNull null
+                    }
+
+                    // If file was deleted but video is streamable, keep the entry (can stream)
+                    // Update the video's isDownloaded flag if file is missing
+                    val correctedVideo = if (video.isDownloaded && !fileExists) {
+                        video.copy(isDownloaded = false, localPath = null)
+                    } else video
+
+                    correctedVideo to progress
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -215,10 +239,13 @@ class HomeViewModel @Inject constructor(
             if (resolvedPages.isEmpty()) {
                 _noAccessMessage.value = "You currently do not have access to any Hasikit content sources.\n\nPlease contact:\n@hasikit_m_bot"
             } else {
+                // Set pages first so videos StateFlow emits immediately with the full first page
                 _sourcePages.value = resolvedPages
+                // Fetch thumbnails in background — feed is already visible while thumbnails load
                 fetchThumbnails(resolvedPages.flatMap { it.media })
             }
 
+            // isLoading=false only after pages are set so skeleton shows until data is ready
             _isLoading.value = false
             isLoadingAllSources = false
         }

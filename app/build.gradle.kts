@@ -100,6 +100,14 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.datastore.preferences)
+    // WorkManager — survives app kills and device reboots for background downloads
+    implementation(libs.androidx.work.runtime.ktx)
+    // Hilt-Work — injects dependencies into WorkManager workers
+    implementation(libs.androidx.hilt.work)
+    // androidx.hilt compiler — required for @HiltWorker annotation processing
+    kapt("androidx.hilt:hilt-compiler:1.2.0")
+    // Shimmer skeleton loader — Netflix-style loading placeholders
+    implementation(libs.shimmer)
 
     // TDLib — local AAR placed at app/libs/tdlib.aar
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))

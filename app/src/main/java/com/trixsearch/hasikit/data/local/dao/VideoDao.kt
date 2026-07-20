@@ -2,7 +2,10 @@ package com.trixsearch.hasikit.data.local.dao
 
 import androidx.room.*
 import com.trixsearch.hasikit.data.local.entities.DownloadEntity
+import com.trixsearch.hasikit.data.local.entities.FavoriteEntity
 import com.trixsearch.hasikit.data.local.entities.VideoEntity
+import com.trixsearch.hasikit.data.local.entities.WatchHistoryEntity
+import com.trixsearch.hasikit.data.local.entities.WatchLaterEntity
 import com.trixsearch.hasikit.data.local.entities.WatchProgressEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -29,7 +32,8 @@ interface VideoDao {
     @Query("SELECT * FROM videos WHERE title LIKE '%' || :query || '%'")
     fun searchVideos(query: String): Flow<List<VideoEntity>>
 
-    // Watch Progress
+    // ── Watch Progress ────────────────────────────────────────────────────────
+
     @Query("SELECT * FROM watch_progress WHERE videoId = :videoId")
     suspend fun getWatchProgress(videoId: String): WatchProgressEntity?
 
@@ -39,7 +43,11 @@ interface VideoDao {
     @Query("SELECT * FROM watch_progress ORDER BY lastWatchedAt DESC")
     fun getAllWatchProgress(): Flow<List<WatchProgressEntity>>
 
-    // Downloads
+    @Query("DELETE FROM watch_progress WHERE videoId = :videoId")
+    suspend fun deleteWatchProgress(videoId: String)
+
+    // ── Downloads ─────────────────────────────────────────────────────────────
+
     @Query("SELECT * FROM downloads")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
 
@@ -60,4 +68,52 @@ interface VideoDao {
 
     @Query("DELETE FROM watch_progress")
     suspend fun deleteAllWatchProgress()
+
+    // ── Favorites ─────────────────────────────────────────────────────────────
+
+    @Query("SELECT * FROM favorites ORDER BY addedAt DESC")
+    fun getAllFavorites(): Flow<List<FavoriteEntity>>
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE videoId = :videoId")
+    suspend fun isFavorite(videoId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addFavorite(favorite: FavoriteEntity)
+
+    @Query("DELETE FROM favorites WHERE videoId = :videoId")
+    suspend fun removeFavorite(videoId: String)
+
+    @Query("DELETE FROM favorites")
+    suspend fun deleteAllFavorites()
+
+    // ── Watch Later ───────────────────────────────────────────────────────────
+
+    @Query("SELECT * FROM watch_later ORDER BY addedAt DESC")
+    fun getAllWatchLater(): Flow<List<WatchLaterEntity>>
+
+    @Query("SELECT COUNT(*) FROM watch_later WHERE videoId = :videoId")
+    suspend fun isInWatchLater(videoId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addToWatchLater(item: WatchLaterEntity)
+
+    @Query("DELETE FROM watch_later WHERE videoId = :videoId")
+    suspend fun removeFromWatchLater(videoId: String)
+
+    @Query("DELETE FROM watch_later")
+    suspend fun deleteAllWatchLater()
+
+    // ── Watch History ─────────────────────────────────────────────────────────
+
+    @Query("SELECT * FROM watch_history ORDER BY watchedAt DESC")
+    fun getAllWatchHistory(): Flow<List<WatchHistoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addToWatchHistory(item: WatchHistoryEntity)
+
+    @Query("DELETE FROM watch_history WHERE videoId = :videoId")
+    suspend fun removeFromWatchHistory(videoId: String)
+
+    @Query("DELETE FROM watch_history")
+    suspend fun deleteAllWatchHistory()
 }

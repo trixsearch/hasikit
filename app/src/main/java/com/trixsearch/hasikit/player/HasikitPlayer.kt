@@ -227,7 +227,12 @@ class HasikitPlayer @Inject constructor(
         url.endsWith(".mp4", ignoreCase = true) || url.endsWith(".m4v", ignoreCase = true) -> MimeTypes.VIDEO_MP4
         url.endsWith(".webm", ignoreCase = true) -> MimeTypes.VIDEO_WEBM
         url.endsWith(".mkv", ignoreCase = true) -> MimeTypes.VIDEO_MATROSKA
-        url.endsWith(".mov", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+        // MOV and QT use MP4 container parser in ExoPlayer
+        url.endsWith(".mov", ignoreCase = true) || url.endsWith(".qt", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+        // 3GP is natively supported by ExoPlayer via MP4 parser
+        url.endsWith(".3gp", ignoreCase = true) || url.endsWith(".3g2", ignoreCase = true) -> "video/3gpp"
+        // AVI, FLV, WMV, MTS, SVI — not natively supported by ExoPlayer/Media3
+        // Returning null lets ExoPlayer attempt auto-detection; may result in playback error
         else -> null
     }
 
