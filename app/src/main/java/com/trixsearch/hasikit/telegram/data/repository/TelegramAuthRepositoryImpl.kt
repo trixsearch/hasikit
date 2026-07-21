@@ -99,31 +99,34 @@ class TelegramAuthRepositoryImpl @Inject constructor(
         (_authState.value as? AuthState.Authenticated)?.user
 
     override suspend fun restoreSession() {
-        Log.d(TAG, "restoreSession")
+        Log.d(TAG, "[AUTH_RESTORE] restoreSession start — current state=${_authState.value::class.simpleName}")
         if (!sessionManager.hasValidSession()) {
+            Log.d(TAG, "[AUTH_RESTORE] no valid session — setting Unauthenticated")
             _authState.value = AuthState.Unauthenticated
             return
         }
         try {
             val sessionString = sessionManager.getSessionString()
             if (sessionString.isNullOrBlank()) {
+                Log.w(TAG, "[AUTH_RESTORE] session string blank — clearing and setting Unauthenticated")
                 sessionManager.clearSession()
                 _authState.value = AuthState.Unauthenticated
                 return
             }
+            Log.d(TAG, "[AUTH_RESTORE] importing session string length=${sessionString.length}")
             val user = clientService.importSession(sessionString)
             if (user != null) {
                 _authState.value = AuthState.Authenticated(user)
                 // Load profile photo in background after session restore
                 loadAndCacheProfilePhoto(user)
-                Log.d(TAG, "restoreSession success userId=${user.id}")
+                Log.d(TAG, "[AUTH_RESTORE] success userId=${user.id} displayName=${user.displayName}")
             } else {
-                Log.w(TAG, "restoreSession — importSession returned null, clearing")
+                Log.w(TAG, "[AUTH_RESTORE] importSession returned null — clearing session")
                 sessionManager.clearSession()
                 _authState.value = AuthState.Unauthenticated
             }
         } catch (e: Exception) {
-            Log.e(TAG, "restoreSession exception: ${e.message}", e)
+            Log.e(TAG, "[AUTH_RESTORE] exception: ${e.message}", e)
             sessionManager.clearSession()
             _authState.value = AuthState.Unauthenticated
         }

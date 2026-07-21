@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import android.util.Log
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -23,6 +24,7 @@ import com.trixsearch.hasikit.ui.screens.request.RequestContentScreen
 import com.trixsearch.hasikit.ui.screens.settings.AdvancedSettingsScreen
 import com.trixsearch.hasikit.ui.screens.settings.LanguageScreen
 import com.trixsearch.hasikit.ui.screens.settings.SettingsScreen
+import com.trixsearch.hasikit.ui.screens.settings.StorageManagementScreen
 
 @Composable
 fun NavGraph(
@@ -41,13 +43,19 @@ fun NavGraph(
         startDestination = Screen.Auth.route
     ) {
         composable(Screen.Auth.route) {
+            // Login flash fix: only navigate to Home when Authenticated.
+            // AuthScreen shows a spinner for AuthState.Loading so the login form
+            // never flashes during session restoration.
             LaunchedEffect(authState) {
                 if (authState is AuthState.Authenticated) {
+                    Log.d("NavGraph", "[AUTH] Authenticated — navigating to Home")
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Auth.route) { inclusive = true }
                     }
                 }
             }
+            // AuthScreen handles Loading (spinner), CodeSent (OTP), and Unauthenticated (phone form).
+            // It never shows the phone form while Loading, so no login flash occurs.
             AuthScreen(
                 onAuthenticated = {
                     navController.navigate(Screen.Home.route) {
@@ -84,6 +92,10 @@ fun NavGraph(
         // Advanced Settings sub-screen wired into nav graph
         composable(Screen.AdvancedSettings.route) {
             AdvancedSettingsScreen(navController)
+        }
+        // Storage Management sub-screen under Advanced Settings
+        composable(Screen.StorageManagement.route) {
+            StorageManagementScreen(navController)
         }
         composable(
             route = Screen.Player.route,

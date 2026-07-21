@@ -58,6 +58,17 @@ fun AdvancedSettingsScreen(
             // Cache management group
             item {
                 SettingsGroup("Cache", Icons.Default.Storage) {
+                    // Storage Management — dedicated sub-screen with checkboxes and Apply button
+                    ListItem(
+                        headlineContent = { Text("Storage Management", fontWeight = FontWeight.Medium) },
+                        supportingContent = { Text("Clear cache, downloads, thumbnails, player cache", style = MaterialTheme.typography.bodySmall) },
+                        leadingContent = { Icon(Icons.Default.Storage, null, tint = MaterialTheme.colorScheme.primary) },
+                        trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                        modifier = Modifier.clickable {
+                            navController.navigate(com.trixsearch.hasikit.ui.navigation.Screen.StorageManagement.route)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     // Clear app cache — button enabled whenever cache exists; size shown in subtitle
                     ListItem(
                         headlineContent = { Text("Clear Cache", fontWeight = FontWeight.Medium) },

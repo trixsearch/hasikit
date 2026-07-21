@@ -298,7 +298,7 @@ class TelegramChannelRepositoryImpl @Inject constructor(
     ): Result<List<TelegramMedia>> = searchChannelMediaMulti(chatId, listOf(query), limit)
 
     // Multi-query search entry point — called by HomeViewModel with expanded query variants
-    suspend fun searchChannelMediaMulti(
+    override suspend fun searchChannelMediaMulti(
         chatId: Long,
         queryVariants: List<String>,
         limit: Int

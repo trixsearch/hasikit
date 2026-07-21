@@ -13,6 +13,8 @@ sealed class Screen(val route: String) {
     object Language : Screen("language")
     // Advanced Settings sub-screen for dangerous/advanced options
     object AdvancedSettings : Screen("advanced_settings")
+    // Storage Management sub-screen under Advanced Settings
+    object StorageManagement : Screen("storage_management")
     object Player : Screen("player/{videoId}") {
         fun createRoute(videoId: String): String {
             val encoded = URLEncoder.encode(videoId, "UTF-8")

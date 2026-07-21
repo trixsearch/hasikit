@@ -297,6 +297,10 @@ fun PlayerScreen(
     // Bug fix #8: Video end countdown — 5-second overlay before auto-play or repeat
     var endCountdown by remember { mutableIntStateOf(0) }
     var showEndCountdown by remember { mutableStateOf(false) }
+    // Black screen fix: tracks when player.initialize() has completed so AndroidView can re-attach
+    // the player instance to the TextureView surface. Without this, the surface binds before
+    // ExoPlayer is ready and the first frame never renders until aspect ratio is changed.
+    var playerInitialized by remember { mutableStateOf(false) }
 
     // File picker launcher for local subtitle files (.srt .ass .vtt .sub)
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
@@ -512,6 +516,11 @@ fun PlayerScreen(
         scope.launch {
             // Re-initialize player in case it was released by a previous session
             player.initialize()
+            Log.d(TAG, "[RENDERER] player initialized — signalling surface refresh via playerInitialized flag")
+            // Signal the AndroidView update block to re-attach the player instance to the surface.
+            // This forces TextureView to re-bind after initialize(), preventing the black screen
+            // that occurs when the surface is attached before the ExoPlayer instance is ready.
+            playerInitialized = true
             val startPos = viewModel.getInitialPosition(videoId)
             val resolvedUrl = when {
                 playUrl.isNotBlank() -> playUrl
@@ -527,6 +536,7 @@ fun PlayerScreen(
             viewModel.saveProgress(videoId, player.getCurrentPosition(), player.getDuration())
             // Stop and reset player instead of full release — player is @Singleton and reused across screens
             player.stop()
+            playerInitialized = false
         }
     }
 
@@ -597,10 +607,12 @@ fun PlayerScreen(
             },
             update = { view ->
                 val instance = player.getPlayerInstance()
-                if (view.player !== instance) {
-                    // FIX: black screen — when player instance changes, re-attach and force surface refresh
+                // Black screen fix: re-attach player after initialize() completes (playerInitialized=true)
+                // or when the instance changes. Forces TextureView to re-bind and render the first frame.
+                if (view.player !== instance || playerInitialized) {
+                    Log.d(TAG, "[RENDERER] re-attaching player to PlayerView surface playerInitialized=$playerInitialized")
+                    view.player = null
                     view.player = instance
-                    Log.d(TAG, "[PLAYER_VIEW] player instance changed — forcing surface refresh")
                     view.post { view.requestLayout(); view.invalidate() }
                 }
                 view.resizeMode = fitMode.resizeMode

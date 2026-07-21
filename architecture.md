@@ -130,7 +130,7 @@ app/src/main/java/com/trixsearch/hasikit/
 │   │   ├── player/                       # PlayerScreen
 │   │   ├── request/                      # RequestContentScreen
 │   │   ├── search/                       # SearchScreen
-│   │   └── settings/                     # SettingsScreen, AdvancedSettingsScreen, LanguageScreen
+│   │   └── settings/                     # SettingsScreen, AdvancedSettingsScreen, LanguageScreen, StorageManagementScreen
 │   └── theme/
 │       ├── Color.kt
 │       ├── Theme.kt
@@ -381,6 +381,17 @@ Dark theme is the default design target.
 ---
 
 ## Architecture Decisions
+
+### 2026-07-21 — Stability Fix Pass
+
+- Search: 300ms debounce + Job cancellation added to `HomeViewModel.searchTelegram`; Room and Telegram search moved to `Dispatchers.IO`
+- Long-press context menu added to `HorizontalVideoCard` via `combinedClickable`; wired to `addFavorite`, `removeFavorite`, `addWatchLater`, `removeWatchLater` in `HomeViewModel`
+- `StorageManagementScreen` created at `Screen.StorageManagement` route; entry point added to `AdvancedSettingsScreen`
+- Black screen fix: `playerInitialized` flag triggers null-then-re-attach of player to `PlayerView` after `initialize()` completes
+- Login flash fix: `AuthState.Loading` spinner in `AuthScreen` prevents login form from showing during session restore; `NavGraph` only navigates on `Authenticated`
+- `[AUTH_RESTORE]` debug logs added to `TelegramAuthRepositoryImpl.restoreSession`
+- `[SEARCH]` timing and cancellation logs added to `HomeViewModel.searchTelegram`
+- `favoriteIds` and `watchLaterIds` StateFlows added to `HomeViewModel` for per-video menu state
 
 ### 2025-07-xx — Initial Architecture
 

@@ -2,6 +2,7 @@ package com.trixsearch.hasikit.ui.screens.home
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -37,6 +38,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.trixsearch.hasikit.domain.model.DownloadState
 import com.trixsearch.hasikit.domain.model.Video
 import com.trixsearch.hasikit.domain.model.WatchProgress
+import com.trixsearch.hasikit.domain.repository.VideoRepository
 import com.trixsearch.hasikit.ui.components.FastScrollerBox
 import com.trixsearch.hasikit.ui.components.FeedSkeletonLoader
 import com.trixsearch.hasikit.ui.navigation.Screen
@@ -77,9 +79,14 @@ fun HomeScreen(
     val isSearching by viewModel.isSearching.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    // Collect favorite and watch-later ID sets for long-press menu state
+    val favoriteIds by viewModel.favoriteIds.collectAsState()
+    val watchLaterIds by viewModel.watchLaterIds.collectAsState()
 
     listState.OnNearBottom(threshold = viewModel.prefetchThreshold) { viewModel.loadMore() }
 
+    // Search debounce is handled in HomeViewModel.searchTelegram (300ms + Job cancellation)
+    // LaunchedEffect fires on each query change; ViewModel cancels the previous job automatically
     LaunchedEffect(searchQuery) {
         if (searchQuery.isBlank()) viewModel.clearSearch()
         else viewModel.searchTelegram(searchQuery)
@@ -258,7 +265,14 @@ fun HomeScreen(
                                 onPauseDownload = { viewModel.pauseDownload(video.id) },
                                 onResumeDownload = { viewModel.resumeDownload(video.id) },
                                 onDeleteDownload = { viewModel.deleteDownload(video.id) },
-                                downloadState = dlTask?.state
+                                downloadState = dlTask?.state,
+                                // Long-press menu: favorites and watch later
+                                isFavorite = video.id in favoriteIds,
+                                isWatchLater = video.id in watchLaterIds,
+                                onAddFavorite = { viewModel.addFavorite(video) },
+                                onRemoveFavorite = { viewModel.removeFavorite(video.id) },
+                                onAddWatchLater = { viewModel.addWatchLater(video) },
+                                onRemoveWatchLater = { viewModel.removeWatchLater(video.id) }
                             )
                         }
                     }
@@ -313,7 +327,14 @@ fun HomeScreen(
                         onPauseDownload = { viewModel.pauseDownload(video.id) },
                         onResumeDownload = { viewModel.resumeDownload(video.id) },
                         onDeleteDownload = { viewModel.deleteDownload(video.id) },
-                        downloadState = dlTask?.state
+                        downloadState = dlTask?.state,
+                        // Long-press menu: favorites and watch later
+                        isFavorite = video.id in favoriteIds,
+                        isWatchLater = video.id in watchLaterIds,
+                        onAddFavorite = { viewModel.addFavorite(video) },
+                        onRemoveFavorite = { viewModel.removeFavorite(video.id) },
+                        onAddWatchLater = { viewModel.addWatchLater(video) },
+                        onRemoveWatchLater = { viewModel.removeWatchLater(video.id) }
                     )
                 }
 
@@ -427,6 +448,7 @@ fun DownloadedCard(video: Video, onClick: () -> Unit) {
 }
 
 // Updated HorizontalVideoCard to show actual download state and expose pause/resume/delete actions
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun HorizontalVideoCard(
     video: Video,
@@ -437,21 +459,36 @@ fun HorizontalVideoCard(
     onResumeDownload: (() -> Unit)? = null,
     onDeleteDownload: (() -> Unit)? = null,
     // Current download state for showing correct label/actions
-    downloadState: DownloadState? = null
+    downloadState: DownloadState? = null,
+    // Long-press menu callbacks
+    onAddFavorite: (() -> Unit)? = null,
+    onRemoveFavorite: (() -> Unit)? = null,
+    onAddWatchLater: (() -> Unit)? = null,
+    onRemoveWatchLater: (() -> Unit)? = null,
+    isFavorite: Boolean = false,
+    isWatchLater: Boolean = false
 ) {
     val context = LocalContext.current
     var showDownloadMenu by remember { mutableStateOf(false) }
+    // Long-press context menu state
+    var showContextMenu by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable {
-            // Streamability logic — non-streamable documents must be downloaded before playback
-            if (!video.isStreamable && !video.isDownloaded) {
-                android.widget.Toast.makeText(context, "Video must be downloaded before playback.", android.widget.Toast.LENGTH_SHORT).show()
-                onDownloadClick()
-            } else {
-                onClick()
-            }
-        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            // Long-press opens context menu; single tap plays/downloads
+            .combinedClickable(
+                onClick = {
+                    if (!video.isStreamable && !video.isDownloaded) {
+                        android.widget.Toast.makeText(context, "Video must be downloaded before playback.", android.widget.Toast.LENGTH_SHORT).show()
+                        onDownloadClick()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = { showContextMenu = true }
+            ),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
@@ -561,6 +598,115 @@ fun HorizontalVideoCard(
                 }
             }
         }
+    }
+
+    // Long-press context menu — View Info, Favorites, Watch Later, Download, Share, Cancel
+    if (showContextMenu) {
+        AlertDialog(
+            onDismissRequest = { showContextMenu = false },
+            title = {
+                Text(
+                    video.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column {
+                    // View Info
+                    DropdownMenuItem(
+                        text = { Text("View Info") },
+                        leadingIcon = { Icon(Icons.Default.Info, null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            showContextMenu = false
+                            android.widget.Toast.makeText(
+                                context,
+                                "${video.title}\n${formatBytes(video.size)} • ${formatTime(video.duration)}\n${video.sourceLabel}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                    HorizontalDivider()
+                    // Favorites toggle
+                    DropdownMenuItem(
+                        text = { Text(if (isFavorite) "Remove from Favorites" else "Add to Favorites") },
+                        leadingIcon = {
+                            Icon(
+                                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                null,
+                                modifier = Modifier.size(20.dp),
+                                tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        onClick = {
+                            showContextMenu = false
+                            if (isFavorite) onRemoveFavorite?.invoke() else onAddFavorite?.invoke()
+                        }
+                    )
+                    HorizontalDivider()
+                    // Watch Later toggle
+                    DropdownMenuItem(
+                        text = { Text(if (isWatchLater) "Remove from Watch Later" else "Add to Watch Later") },
+                        leadingIcon = {
+                            Icon(
+                                if (isWatchLater) Icons.Default.WatchLater else Icons.Default.WatchLater,
+                                null,
+                                modifier = Modifier.size(20.dp),
+                                tint = if (isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        onClick = {
+                            showContextMenu = false
+                            if (isWatchLater) onRemoveWatchLater?.invoke() else onAddWatchLater?.invoke()
+                        }
+                    )
+                    HorizontalDivider()
+                    // Download actions based on current state
+                    when (downloadState) {
+                        DownloadState.DOWNLOADING -> DropdownMenuItem(
+                            text = { Text("Pause Download") },
+                            leadingIcon = { Icon(Icons.Default.PauseCircle, null, modifier = Modifier.size(20.dp)) },
+                            onClick = { showContextMenu = false; onPauseDownload?.invoke() }
+                        )
+                        DownloadState.PAUSED -> DropdownMenuItem(
+                            text = { Text("Resume Download") },
+                            leadingIcon = { Icon(Icons.Default.PlayCircle, null, modifier = Modifier.size(20.dp)) },
+                            onClick = { showContextMenu = false; onResumeDownload?.invoke() }
+                        )
+                        DownloadState.COMPLETED -> DropdownMenuItem(
+                            text = { Text("Delete Download", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp)) },
+                            onClick = { showContextMenu = false; onDeleteDownload?.invoke() }
+                        )
+                        else -> if (!video.isDownloaded) DropdownMenuItem(
+                            text = { Text("Download") },
+                            leadingIcon = { Icon(Icons.Default.Download, null, modifier = Modifier.size(20.dp)) },
+                            onClick = { showContextMenu = false; onDownloadClick() }
+                        )
+                    }
+                    HorizontalDivider()
+                    // Share
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            showContextMenu = false
+                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, "${video.title} — shared from Hasikit")
+                            }
+                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share via"))
+                        }
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showContextMenu = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

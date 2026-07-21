@@ -1,5 +1,7 @@
 package com.trixsearch.hasikit.ui.screens.home
 
+import com.trixsearch.hasikit.data.local.entities.FavoriteEntity
+import com.trixsearch.hasikit.data.local.entities.WatchLaterEntity
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +18,7 @@ import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
 import com.trixsearch.hasikit.search.SearchEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
@@ -369,9 +373,20 @@ class HomeViewModel @Inject constructor(
     private val _searchIntent = MutableStateFlow<SearchEngine.SearchIntent?>(null)
     val searchIntent: StateFlow<SearchEngine.SearchIntent?> = _searchIntent
 
+    // Active search job — cancelled when a new query arrives (debounce + cancellation)
+    private var searchJob: Job? = null
+
     fun searchTelegram(query: String) {
         if (query.isBlank()) { clearSearch(); return }
-        viewModelScope.launch {
+
+        // Cancel any in-flight search before starting a new one
+        searchJob?.cancel()
+        Log.d(TAG, "[SEARCH] cancelled previous job, starting new search query='$query'")
+
+        searchJob = viewModelScope.launch {
+            // Debounce — wait 300ms after last keystroke before hitting Telegram
+            delay(300L)
+            val searchStart = System.currentTimeMillis()
             _isSearching.value = true
             _searchResults.value = emptyList()
 
@@ -380,19 +395,20 @@ class HomeViewModel @Inject constructor(
             _searchIntent.value = intent
             Log.d(TAG, "[SEARCH] intent: movie='${intent.movieName}' year=${intent.year} audio=${intent.audioLanguage} sub=${intent.subtitleLanguage} quality=${intent.quality} variants=${intent.toTelegramQueryVariants()}")
 
-            // Stage 1: Instant local Room search — emit immediately so UI shows something
-            // while Telegram search is in progress
-            val localVideos = repository.searchVideos(intent.movieName)
-                .first()
-                .ifEmpty { repository.searchVideos(query).first() }
+            // Stage 1: Room search on IO thread — never block the UI thread
+            val localVideos = withContext(Dispatchers.IO) {
+                repository.searchVideos(intent.movieName)
+                    .first()
+                    .ifEmpty { repository.searchVideos(query).first() }
+            }
 
-            // Score and rank local results
+            // Score and rank local results — fuzzy matching applied only to candidates
             val localRanked = localVideos.mapNotNull { video ->
                 val s = SearchEngine.scoreVideo(
                     intent,
                     SearchEngine.VideoFields(
                         title = video.title,
-                        fileName = video.telegramFileId, // best we have locally
+                        fileName = video.telegramFileId,
                         caption = "",
                         sourceLabel = video.sourceLabel
                     )
@@ -404,51 +420,53 @@ class HomeViewModel @Inject constructor(
             // Emit local results immediately so UI is not blank during Telegram search
             if (localRanked.isNotEmpty()) {
                 _searchResults.value = SearchEngine.rank(localRanked).map { it.item }
-                Log.d(TAG, "[SEARCH] Stage-1 local: ${localRanked.size} results emitted")
+                Log.d(TAG, "[SEARCH] Stage-1 local: ${localRanked.size} results emitted in ${System.currentTimeMillis() - searchStart}ms")
             }
 
-            // Stage 2: Telegram multi-query search across all resolved sources
+            // Stage 2: Telegram search runs asynchronously on IO — does not block UI thread
             val telegramResults = mutableListOf<Video>()
             val seenIds = mutableSetOf<String>()
             val queryVariants = intent.toTelegramQueryVariants()
 
-            _sourcePages.value.forEach { page ->
-                val mediaList = channelRepository.searchChannelMediaMulti(
-                    page.chatId, queryVariants, 100
-                ).getOrNull() ?: return@forEach
+            withContext(Dispatchers.IO) {
+                _sourcePages.value.forEach { page ->
+                    val mediaList = channelRepository.searchChannelMediaMulti(
+                        page.chatId, queryVariants, 100
+                    ).getOrNull() ?: return@forEach
 
-                Log.d(TAG, "[SEARCH] Stage-2 source='${page.source.displayName}' raw=${mediaList.size}")
+                    Log.d(TAG, "[SEARCH] Stage-2 source='${page.source.displayName}' raw=${mediaList.size}")
 
-                mediaList.forEach { media ->
-                    val id = "${media.channelId}_${media.messageId}"
-                    if (!seenIds.add(id)) return@forEach
+                    mediaList.forEach { media ->
+                        val id = "${media.channelId}_${media.messageId}"
+                        if (!seenIds.add(id)) return@forEach
 
-                    // Stage 3: Score each Telegram result with SearchEngine
-                    val s = SearchEngine.scoreVideo(
-                        intent,
-                        SearchEngine.VideoFields(
-                            title = media.title,
-                            fileName = media.fileName,
-                            caption = media.caption,
-                            sourceLabel = page.source.displayName
-                        )
-                    )
-                    if (s >= SearchEngine.SCORE_IGNORE_BELOW) {
-                        telegramResults.add(
-                            Video(
-                                id = id,
-                                title = media.title.ifBlank { media.fileName },
-                                thumbnail = _thumbnailCache.value[media.thumbnailFileId],
-                                videoUrl = "",
-                                telegramFileId = media.fileId.toString(),
-                                duration = media.duration.toLong() * 1000L,
-                                size = media.size,
-                                localPath = null,
-                                isDownloaded = false,
-                                sourceLabel = page.source.displayName,
-                                isStreamable = media.isStreamable
+                        // Stage 3: Score each Telegram result — fuzzy matching on candidates only
+                        val s = SearchEngine.scoreVideo(
+                            intent,
+                            SearchEngine.VideoFields(
+                                title = media.title,
+                                fileName = media.fileName,
+                                caption = media.caption,
+                                sourceLabel = page.source.displayName
                             )
                         )
+                        if (s >= SearchEngine.SCORE_IGNORE_BELOW) {
+                            telegramResults.add(
+                                Video(
+                                    id = id,
+                                    title = media.title.ifBlank { media.fileName },
+                                    thumbnail = _thumbnailCache.value[media.thumbnailFileId],
+                                    videoUrl = "",
+                                    telegramFileId = media.fileId.toString(),
+                                    duration = media.duration.toLong() * 1000L,
+                                    size = media.size,
+                                    localPath = null,
+                                    isDownloaded = false,
+                                    sourceLabel = page.source.displayName,
+                                    isStreamable = media.isStreamable
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -456,7 +474,6 @@ class HomeViewModel @Inject constructor(
             // Merge local + Telegram results, re-rank the combined set
             val allCandidates = mutableListOf<SearchEngine.SearchResult<Video>>()
 
-            // Re-score local results (they already have thumbnails/download state)
             localVideos.forEach { video ->
                 val s = SearchEngine.scoreVideo(
                     intent,
@@ -473,7 +490,6 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
-            // Score Telegram results
             telegramResults.forEach { video ->
                 val s = SearchEngine.scoreVideo(
                     intent,
@@ -488,7 +504,8 @@ class HomeViewModel @Inject constructor(
             }
 
             val ranked = SearchEngine.rank(allCandidates)
-            Log.d(TAG, "[SEARCH] Stage-3 ranked: ${ranked.size} results (local=${localRanked.size} telegram=${telegramResults.size})")
+            val elapsed = System.currentTimeMillis() - searchStart
+            Log.d(TAG, "[SEARCH] Stage-3 ranked: ${ranked.size} results (local=${localRanked.size} telegram=${telegramResults.size}) totalTime=${elapsed}ms")
 
             _searchResults.value = ranked.map { it.item }
             _isSearching.value = false
@@ -508,6 +525,48 @@ class HomeViewModel @Inject constructor(
         _isSearching.value = false
         _searchIntent.value = null
     }
+
+    // ── Favorites & Watch Later — called from long-press context menu ──────────
+
+    fun addFavorite(video: Video) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "addFavorite videoId=${video.id}")
+            // Ensure video exists in DB before adding favorite
+            repository.insertVideo(video)
+            repository.addFavorite(FavoriteEntity(videoId = video.id, addedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun removeFavorite(videoId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "removeFavorite videoId=$videoId")
+            repository.removeFavorite(videoId)
+        }
+    }
+
+    fun addWatchLater(video: Video) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "addWatchLater videoId=${video.id}")
+            repository.insertVideo(video)
+            repository.addToWatchLater(WatchLaterEntity(videoId = video.id, addedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun removeWatchLater(videoId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "removeWatchLater videoId=$videoId")
+            repository.removeFromWatchLater(videoId)
+        }
+    }
+
+    // Expose favorite/watchlater sets for the UI to check per-video state
+    val favoriteIds: StateFlow<Set<String>> = repository.getAllFavorites()
+        .map { list -> list.map { it.videoId }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val watchLaterIds: StateFlow<Set<String>> = repository.getAllWatchLater()
+        .map { list -> list.map { it.videoId }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     fun startDownload(video: Video) {
         Log.d(TAG, "startDownload videoId=${video.id}")
