@@ -287,96 +287,112 @@ class TelegramChannelRepositoryImpl @Inject constructor(
         }
     }
 
+    // Smart Search V4: searchChannelMedia now accepts a list of query variants produced by
+    // SearchEngine.parseIntent().toTelegramQueryVariants(). Each variant is sent as a separate
+    // TDLib SearchChatMessages call so Telegram's own index handles language/quality tokens.
+    // Stage B history scan uses SearchEngine.normalize() for fuzzy file-name matching.
     override suspend fun searchChannelMedia(
         chatId: Long,
         query: String,
         limit: Int
+    ): Result<List<TelegramMedia>> = searchChannelMediaMulti(chatId, listOf(query), limit)
+
+    // Multi-query search entry point — called by HomeViewModel with expanded query variants
+    suspend fun searchChannelMediaMulti(
+        chatId: Long,
+        queryVariants: List<String>,
+        limit: Int
     ): Result<List<TelegramMedia>> {
-        Log.d(TAG, "searchChannelMedia START chatId=$chatId query='$query'")
+        val primaryQuery = queryVariants.firstOrNull()?.trim() ?: return Result.success(emptyList())
+        Log.d(TAG, "searchChannelMediaMulti START chatId=$chatId variants=$queryVariants")
         val allMedia = mutableListOf<TelegramMedia>()
-
-        // Declared once at file scope as SearchBatchResult to avoid duplicate JVM class name across Stage A and A2
-
-        // Stage A: Telegram text search — searches message text and captions via TDLib index
-        // This covers: caption text, message text. Does NOT cover raw file names.
-        var fromMessageId = 0L
+        val seenIds = mutableSetOf<Long>()
         val batchSize = 100
-        var telegramSearchCount = 0
-        while (true) {
-            val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
-                clientService.send(
-                    TdApi.SearchChatMessages(
-                        chatId, null, query, null, fromMessageId, 0, batchSize,
-                        TdApi.SearchMessagesFilterVideo()
-                    )
-                ) { result ->
-                    when (result) {
-                        is TdApi.FoundChatMessages -> {
-                            val media = result.messages.mapNotNull { it.toTelegramMedia(chatId) }
-                            Log.d(TAG, "searchChannelMedia Stage-A batch fromMsgId=$fromMessageId found=${result.messages.size} media=${media.size} next=${result.nextFromMessageId}")
-                            cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
+
+        // Stage A: TDLib text search for each query variant — video-type messages
+        // Telegram's index covers caption text and message text, not raw file names.
+        for (variant in queryVariants) {
+            var fromMessageId = 0L
+            var variantCount = 0
+            while (true) {
+                val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
+                    clientService.send(
+                        TdApi.SearchChatMessages(
+                            chatId, null, variant, null, fromMessageId, 0, batchSize,
+                            TdApi.SearchMessagesFilterVideo()
+                        )
+                    ) { result ->
+                        when (result) {
+                            is TdApi.FoundChatMessages -> {
+                                val media = result.messages
+                                    .filter { it.id !in seenIds }
+                                    .mapNotNull { it.toTelegramMedia(chatId) }
+                                Log.d(TAG, "[SEARCH] Stage-A variant='$variant' fromMsgId=$fromMessageId found=${result.messages.size} new=${media.size}")
+                                cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
+                            }
+                            is TdApi.Error -> {
+                                Log.e(TAG, "[SEARCH] Stage-A error ${result.code}: ${result.message}")
+                                cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
+                            }
+                            else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                         }
-                        is TdApi.Error -> {
-                            Log.e(TAG, "searchChannelMedia Stage-A error ${result.code}: ${result.message}")
-                            cont.resume(Result.failure(Exception("${result.code}: ${result.message}")))
-                        }
-                        else -> cont.resume(Result.failure(Exception("Unexpected: $result")))
                     }
+                    cont.invokeOnCancellation {}
                 }
-                cont.invokeOnCancellation {}
+                val batchResult = batch.getOrNull() ?: break
+                batchResult.media.forEach { seenIds.add(it.messageId) }
+                allMedia.addAll(batchResult.media)
+                variantCount += batchResult.media.size
+                if (batchResult.media.isEmpty() || batchResult.nextFromMessageId == 0L) break
+                fromMessageId = batchResult.nextFromMessageId
             }
-            val batchResult = batch.getOrNull() ?: break
-            allMedia.addAll(batchResult.media)
-            telegramSearchCount += batchResult.media.size
-            if (batchResult.media.isEmpty() || batchResult.nextFromMessageId == 0L) break
-            fromMessageId = batchResult.nextFromMessageId
+            Log.d(TAG, "[SEARCH] Stage-A variant='$variant' total=$variantCount")
         }
-        Log.d(TAG, "searchChannelMedia Stage-A complete: telegramResults=$telegramSearchCount")
 
-        // seenIds tracks all message IDs already collected to avoid duplicates across stages
-        val seenIds = allMedia.map { it.messageId }.toSet().toMutableSet()
-
-        // Stage A2: Also search document-type messages
-        // videos sent as documents (common for MKV/large files uploaded without compression)
-        var docFromMessageId = 0L
-        var docSearchCount = 0
-        while (true) {
-            val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
-                clientService.send(
-                    TdApi.SearchChatMessages(
-                        chatId, null, query, null, docFromMessageId, 0, batchSize,
-                        TdApi.SearchMessagesFilterDocument()
-                    )
-                ) { result ->
-                    when (result) {
-                        is TdApi.FoundChatMessages -> {
-                            val media = result.messages
-                                .filter { it.id !in seenIds }
-                                .mapNotNull { it.toTelegramMedia(chatId) }
-                            Log.d(TAG, "searchChannelMedia Stage-A2 doc batch fromMsgId=$docFromMessageId found=${result.messages.size} media=${media.size}")
-                            cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
+        // Stage A2: TDLib text search for each variant — document-type messages
+        // MKV and large MP4 files are often uploaded as documents, not videos.
+        for (variant in queryVariants) {
+            var fromMessageId = 0L
+            var variantCount = 0
+            while (true) {
+                val batch = suspendCancellableCoroutine<Result<SearchBatchResult>> { cont ->
+                    clientService.send(
+                        TdApi.SearchChatMessages(
+                            chatId, null, variant, null, fromMessageId, 0, batchSize,
+                            TdApi.SearchMessagesFilterDocument()
+                        )
+                    ) { result ->
+                        when (result) {
+                            is TdApi.FoundChatMessages -> {
+                                val media = result.messages
+                                    .filter { it.id !in seenIds }
+                                    .mapNotNull { it.toTelegramMedia(chatId) }
+                                Log.d(TAG, "[SEARCH] Stage-A2 doc variant='$variant' found=${result.messages.size} new=${media.size}")
+                                cont.resume(Result.success(SearchBatchResult(media, result.nextFromMessageId)))
+                            }
+                            is TdApi.Error -> {
+                                Log.w(TAG, "[SEARCH] Stage-A2 doc error ${result.code}: ${result.message}")
+                                cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
+                            }
+                            else -> cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
                         }
-                        is TdApi.Error -> {
-                            Log.w(TAG, "searchChannelMedia Stage-A2 doc error ${result.code}: ${result.message}")
-                            cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
-                        }
-                        else -> cont.resume(Result.success(SearchBatchResult(emptyList(), 0L)))
                     }
+                    cont.invokeOnCancellation {}
                 }
-                cont.invokeOnCancellation {}
+                val batchResult = batch.getOrNull() ?: break
+                batchResult.media.forEach { seenIds.add(it.messageId) }
+                allMedia.addAll(batchResult.media)
+                variantCount += batchResult.media.size
+                if (batchResult.media.isEmpty() || batchResult.nextFromMessageId == 0L) break
+                fromMessageId = batchResult.nextFromMessageId
             }
-            val batchResult = batch.getOrNull() ?: break
-            batchResult.media.forEach { seenIds.add(it.messageId) }
-            allMedia.addAll(batchResult.media)
-            docSearchCount += batchResult.media.size
-            if (batchResult.media.isEmpty() || batchResult.nextFromMessageId == 0L) break
-            docFromMessageId = batchResult.nextFromMessageId
+            Log.d(TAG, "[SEARCH] Stage-A2 doc variant='$variant' total=$variantCount")
         }
-        Log.d(TAG, "searchChannelMedia Stage-A2 complete: docResults=$docSearchCount")
 
-        // Stage B: File name scan — Telegram text search does NOT index raw file names.
-        // Walk the full channel history and match query against fileName and title.
-        // This ensures videos like 'My.Movie.1080p.mkv' are found even if caption is empty.
+        // Stage B: Full history scan with SearchEngine fuzzy matching on file names.
+        // Telegram's text index does NOT index raw file names (e.g. "Pushpa.2021.1080p.mkv").
+        // We walk the channel history and apply normalize()+score() to catch these.
+        val normalizedPrimary = com.trixsearch.hasikit.search.SearchEngine.normalize(primaryQuery)
         var historyOffset = 0L
         var historyBatches = 0
         val maxHistoryBatches = 20 // cap at 2000 messages to avoid infinite scan
@@ -395,11 +411,21 @@ class TelegramChannelRepositoryImpl @Inject constructor(
             val matched = historyResult.messages.mapNotNull { msg ->
                 if (msg.id in seenIds) return@mapNotNull null
                 val media = msg.toTelegramMedia(chatId) ?: return@mapNotNull null
-                // Match query against file name, cleaned title, and caption
-                val matchesFileName = media.fileName.contains(query, ignoreCase = true)
-                val matchesTitle = media.title.contains(query, ignoreCase = true)
-                val matchesCaption = media.caption.contains(query, ignoreCase = true)
-                if (matchesFileName || matchesTitle || matchesCaption) {
+                // Smart matching: normalize file name, title, caption and score against query
+                val fileScore = com.trixsearch.hasikit.search.SearchEngine.score(
+                    normalizedPrimary,
+                    com.trixsearch.hasikit.search.SearchEngine.normalize(media.fileName)
+                )
+                val titleScore = com.trixsearch.hasikit.search.SearchEngine.score(
+                    normalizedPrimary,
+                    com.trixsearch.hasikit.search.SearchEngine.normalize(media.title)
+                )
+                val captionScore = com.trixsearch.hasikit.search.SearchEngine.score(
+                    normalizedPrimary,
+                    com.trixsearch.hasikit.search.SearchEngine.normalize(media.caption)
+                )
+                val best = maxOf(fileScore, titleScore, captionScore)
+                if (best >= com.trixsearch.hasikit.search.SearchEngine.SCORE_IGNORE_BELOW) {
                     seenIds.add(msg.id)
                     media
                 } else null
@@ -409,12 +435,12 @@ class TelegramChannelRepositoryImpl @Inject constructor(
             val oldestId = historyResult.messages.minOfOrNull { it.id } ?: break
             historyOffset = oldestId
             historyBatches++
-            Log.d(TAG, "searchChannelMedia Stage-B batch=$historyBatches msgs=${historyResult.messages.size} matched=${matched.size} oldestId=$oldestId")
+            Log.d(TAG, "[SEARCH] Stage-B batch=$historyBatches msgs=${historyResult.messages.size} matched=${matched.size} oldestId=$oldestId")
 
-            if (historyResult.messages.size < 100) break // no more history
+            if (historyResult.messages.size < 100) break
         }
 
-        Log.d(TAG, "searchChannelMedia COMPLETE chatId=$chatId query='$query' total=${allMedia.size} (telegramSearch=$telegramSearchCount historyBatches=$historyBatches)")
+        Log.d(TAG, "[SEARCH] COMPLETE chatId=$chatId total=${allMedia.size} historyBatches=$historyBatches")
         return Result.success(allMedia)
     }
 

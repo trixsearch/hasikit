@@ -28,10 +28,22 @@ interface TelegramChannelRepository {
 
     /**
      * Search the channel history by [query].
+     * Single-query entry point — delegates to searchChannelMediaMulti.
      */
     suspend fun searchChannelMedia(
         chatId: Long,
         query: String,
+        limit: Int = 50
+    ): Result<List<TelegramMedia>>
+
+    /**
+     * Smart Search V4: search with multiple query variants produced by
+     * SearchEngine.parseIntent().toTelegramQueryVariants().
+     * Each variant is sent as a separate TDLib SearchChatMessages call.
+     */
+    suspend fun searchChannelMediaMulti(
+        chatId: Long,
+        queryVariants: List<String>,
         limit: Int = 50
     ): Result<List<TelegramMedia>>
 

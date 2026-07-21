@@ -2,6 +2,7 @@ package com.trixsearch.hasikit.data.repository
 
 import com.trixsearch.hasikit.data.local.dao.VideoDao
 import com.trixsearch.hasikit.data.local.entities.FavoriteEntity
+import com.trixsearch.hasikit.data.local.entities.VideoEntity
 import com.trixsearch.hasikit.data.local.entities.WatchHistoryEntity
 import com.trixsearch.hasikit.data.local.entities.WatchLaterEntity
 import com.trixsearch.hasikit.data.local.entities.toDomain
@@ -36,8 +37,40 @@ class VideoRepositoryImpl @Inject constructor(
     override suspend fun deleteVideo(video: Video) =
         videoDao.deleteVideo(video.toEntity())
 
+    // Stage 1 local search — SQL LIKE on title and sourceLabel
     override fun searchVideos(query: String): Flow<List<Video>> =
         videoDao.searchVideos(query).map { it.map { e -> e.toDomain() } }
+
+    // Search within downloaded videos only (Library Downloads tab)
+    override fun searchDownloadedVideos(query: String): Flow<List<Video>> =
+        videoDao.searchDownloadedVideos(query).map { it.map { e -> e.toDomain() } }
+
+    // SQL-level sort variants for Library Downloads tab (Metrolist pattern)
+    override fun downloadedByNameAsc(): Flow<List<Video>> =
+        videoDao.downloadedByNameAsc().map { it.map { e -> e.toDomain() } }
+
+    override fun downloadedByDateDesc(): Flow<List<Video>> =
+        videoDao.downloadedByDateDesc().map { it.map { e -> e.toDomain() } }
+
+    override fun downloadedBySizeDesc(): Flow<List<Video>> =
+        videoDao.downloadedBySizeDesc().map { it.map { e -> e.toDomain() } }
+
+    override fun downloadedByDurationDesc(): Flow<List<Video>> =
+        videoDao.downloadedByDurationDesc().map { it.map { e -> e.toDomain() } }
+
+    override fun downloadedByChannel(): Flow<List<Video>> =
+        videoDao.downloadedByChannel().map { it.map { e -> e.toDomain() } }
+
+    // Continue Watching — SQL JOIN with watch_progress, ordered by most recently watched
+    override fun getVideosWithProgress(): Flow<List<Video>> =
+        videoDao.getVideosWithProgress().map { it.map { e -> e.toDomain() } }
+
+    // Storage stats — SQL aggregates
+    override suspend fun countDownloadedVideos(): Int =
+        videoDao.countDownloadedVideos()
+
+    override suspend fun totalDownloadedSize(): Long =
+        videoDao.totalDownloadedSize()
 
     // ── Watch Progress ────────────────────────────────────────────────────────
 
@@ -59,6 +92,10 @@ class VideoRepositoryImpl @Inject constructor(
     override fun getAllDownloads(): Flow<List<DownloadTask>> =
         videoDao.getAllDownloads().map { it.map { e -> e.toDomain() } }
 
+    // Active downloads only (DOWNLOADING, QUEUED, PAUSED) — SQL filter, not Kotlin filter
+    override fun getActiveDownloads(): Flow<List<DownloadTask>> =
+        videoDao.getActiveDownloads().map { it.map { e -> e.toDomain() } }
+
     override suspend fun getDownload(videoId: String): DownloadTask? =
         videoDao.getDownload(videoId)?.toDomain()
 
@@ -76,6 +113,10 @@ class VideoRepositoryImpl @Inject constructor(
 
     // ── Favorites ─────────────────────────────────────────────────────────────
 
+    // SQL JOIN returns full Video objects — no separate getVideoById lookup per item
+    override fun getFavoriteVideos(): Flow<List<Video>> =
+        videoDao.getFavoriteVideos().map { it.map { e -> e.toDomain() } }
+
     override fun getAllFavorites(): Flow<List<FavoriteEntity>> =
         videoDao.getAllFavorites()
 
@@ -90,6 +131,10 @@ class VideoRepositoryImpl @Inject constructor(
 
     // ── Watch Later ───────────────────────────────────────────────────────────
 
+    // SQL JOIN returns full Video objects
+    override fun getWatchLaterVideos(): Flow<List<Video>> =
+        videoDao.getWatchLaterVideos().map { it.map { e -> e.toDomain() } }
+
     override fun getAllWatchLater(): Flow<List<WatchLaterEntity>> =
         videoDao.getAllWatchLater()
 
@@ -103,6 +148,10 @@ class VideoRepositoryImpl @Inject constructor(
         videoDao.removeFromWatchLater(videoId)
 
     // ── Watch History ─────────────────────────────────────────────────────────
+
+    // SQL JOIN returns full Video objects — latest watch at top
+    override fun getHistoryVideos(): Flow<List<Video>> =
+        videoDao.getHistoryVideos().map { it.map { e -> e.toDomain() } }
 
     override fun getAllWatchHistory(): Flow<List<WatchHistoryEntity>> =
         videoDao.getAllWatchHistory()

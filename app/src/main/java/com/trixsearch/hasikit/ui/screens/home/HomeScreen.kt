@@ -71,14 +71,15 @@ fun HomeScreen(
     val noAccessMessage by viewModel.noAccessMessage.collectAsState()
     val availableSources by viewModel.availableSources.collectAsState()
     val selectedSourceFilter by viewModel.selectedSourceFilter.collectAsState()
-    // Bug fix #9/#10: Telegram search results and loading state
+    // Smart Search V4: collect parsed intent to show chips (year, language, quality)
+    val searchIntent by viewModel.searchIntent.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
     listState.OnNearBottom(threshold = viewModel.prefetchThreshold) { viewModel.loadMore() }
 
-    // Bug fix #9/#10: trigger Telegram search when query changes, clear when blank
     LaunchedEffect(searchQuery) {
         if (searchQuery.isBlank()) viewModel.clearSearch()
         else viewModel.searchTelegram(searchQuery)

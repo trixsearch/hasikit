@@ -24,7 +24,8 @@ object DatabaseModule {
             "hasikit_db"
         )
             // Migration 1→2: adds favorites, watch_later, watch_history tables
-            .addMigrations(HasikitDatabase.MIGRATION_1_2)
+            // Migration 2→3: adds sourceLabel, isStreamable, uploadDate to videos table
+            .addMigrations(HasikitDatabase.MIGRATION_1_2, HasikitDatabase.MIGRATION_2_3)
             .build()
     }
 

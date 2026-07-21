@@ -150,29 +150,81 @@ class DownloadWorker @AssistedInject constructor(
             cont.invokeOnCancellation {}
         }
 
-    // Copy completed TDLib file to permanent app-private Movies directory
+    // Copy completed TDLib file to permanent destination.
+    // If destDir is a content:// SAF URI, write via DocumentFile so the file lands in the
+    // user-selected folder. If it is a plain file path, write directly. Falls back to
+    // app-private Movies dir when destDir is null or blank.
     private fun copyToDestination(sourcePath: String, title: String, videoId: String, destDir: String?): String {
-        val src = File(sourcePath)
-        if (!src.exists()) return sourcePath
+        val src = java.io.File(sourcePath)
+        if (!src.exists()) {
+            Log.w(TAG, "copyToDestination source missing: $sourcePath")
+            return sourcePath
+        }
 
         val ext = sourcePath.substringAfterLast('.', "mp4")
         val safeId = videoId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(30)
         val safeTitle = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(60)
         val fileName = "${safeTitle}_${safeId}.$ext"
 
-        val dir = if (!destDir.isNullOrBlank()) File(destDir) else
-            context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
-                ?: return sourcePath
+        // SAF path: destDir is a content:// tree URI from the folder picker
+        if (!destDir.isNullOrBlank() && destDir.startsWith("content://")) {
+            return try {
+                val treeUri = android.net.Uri.parse(destDir)
+                val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                    ?: throw Exception("DocumentFile.fromTreeUri returned null for $destDir")
+                // Delete existing file with same name to allow overwrite
+                docDir.findFile(fileName)?.delete()
+                val mimeType = when (ext.lowercase()) {
+                    "mkv" -> "video/x-matroska"
+                    "webm" -> "video/webm"
+                    "mov" -> "video/quicktime"
+                    else -> "video/mp4"
+                }
+                val destDoc = docDir.createFile(mimeType, fileName)
+                    ?: throw Exception("DocumentFile.createFile failed for $fileName in $destDir")
+                context.contentResolver.openOutputStream(destDoc.uri)?.use { out ->
+                    src.inputStream().use { it.copyTo(out) }
+                } ?: throw Exception("openOutputStream returned null for ${destDoc.uri}")
+                Log.d(TAG, "[DOWNLOAD_PATH] SAF copy success uri=${destDoc.uri}")
+                // Return the content URI string so the player can open it via ContentResolver
+                destDoc.uri.toString()
+            } catch (e: Exception) {
+                Log.e(TAG, "copyToDestination SAF failed, falling back to app-private", e)
+                copyToAppPrivate(src, fileName)
+            }
+        }
 
+        // Plain file path: destDir is an absolute path string
+        if (!destDir.isNullOrBlank() && !destDir.startsWith("content://")) {
+            return try {
+                val dir = java.io.File(destDir).also { it.mkdirs() }
+                val dest = java.io.File(dir, fileName)
+                src.copyTo(dest, overwrite = true)
+                Log.d(TAG, "[DOWNLOAD_PATH] file path copy success path=${dest.absolutePath}")
+                dest.absolutePath
+            } catch (e: Exception) {
+                Log.e(TAG, "copyToDestination file path failed, falling back to app-private", e)
+                copyToAppPrivate(src, fileName)
+            }
+        }
+
+        // No destDir set: use app-private Movies directory
+        return copyToAppPrivate(src, fileName)
+    }
+
+    // Fallback: copy to app-private Movies directory (always writable, no permissions needed)
+    private fun copyToAppPrivate(src: java.io.File, fileName: String): String {
+        val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+            ?: context.filesDir
         dir.mkdirs()
-        val dest = File(dir, fileName)
+        val dest = java.io.File(dir, fileName)
         return try {
             src.copyTo(dest, overwrite = true)
-            Log.d(TAG, "copyToDestination success path=${dest.absolutePath}")
+            Log.d(TAG, "[DOWNLOAD_PATH] app-private fallback path=${dest.absolutePath}")
             dest.absolutePath
         } catch (e: Exception) {
-            Log.e(TAG, "copyToDestination failed", e)
-            sourcePath
+            Log.e(TAG, "copyToAppPrivate failed", e)
+            src.absolutePath
         }
     }
 

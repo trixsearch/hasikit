@@ -125,6 +125,76 @@ Rules:
 7. Keep entries concise and human readable.
 
 ---
+CHAT HISTORY COMPACTION RULE
+
+Amazon Q sometimes triggers:
+
+"Compact chat history?"
+
+when the conversation context becomes full.
+
+Whenever chat compaction happens, or whenever Amazon Q summarizes previous work before compacting history:
+
+1. Treat the compaction summary as an official project update.
+
+2. Automatically update features.md.
+
+3. Automatically update architecture.md if architecture, database, storage, search, player, download, or project structure information was included in the compaction summary.
+
+4. Add a new section in features.md:
+
+## Development History
+
+### YYYY-MM-DD
+
+and record:
+
+- Features completed
+- Bugs fixed
+- Refactors performed
+- Architecture changes
+- Storage changes
+- Search improvements
+- Player improvements
+- Database changes
+- Download system changes
+
+5. If the compaction summary contains implementation details, copy the important outcomes into the appropriate section of features.md rather than storing the raw summary.
+
+6. If new files, folders, Room entities, DAOs, repositories, ViewModels, Workers, services, modules, or screens were created, update architecture.md automatically.
+
+7. If architecture decisions were made during the conversation, add them under:
+
+# Architecture Decisions
+
+with the date.
+
+Examples:
+
+### 2026-07-21
+
+- Downloads migrated to WorkManager.
+- Favorites table added.
+- WatchLater table added.
+- WatchHistory table added.
+- Continue Watching stores playback position only.
+- Hidden video cache removed.
+- Download model uses only DOWNLOADED and NOT_DOWNLOADED states.
+
+8. Documentation must survive chat compaction.
+
+Nothing important from the compaction summary should be lost.
+
+9. Before ending a task, verify:
+
+- features.md reflects all completed work.
+- architecture.md reflects all architectural changes.
+
+10. A task is not considered complete until both documentation files are synchronized with the latest chat compaction summary.
+
+Compacted chat history summaries are treated as official project records and must be merged into project documentation automatically.
+
+---
 
 # architecture.md
 

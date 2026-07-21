@@ -9,16 +9,39 @@ import com.trixsearch.hasikit.data.local.entities.WatchLaterEntity
 import com.trixsearch.hasikit.data.local.entities.WatchProgressEntity
 import kotlinx.coroutines.flow.Flow
 
+// DAO architecture inspired by Metrolist: SQL-level sorting/filtering instead of in-memory
+// operations. Each sort variant is a separate @Query so SQLite does the work, not Kotlin.
 @Dao
 interface VideoDao {
-    @Query("SELECT * FROM videos ORDER BY id DESC")
+
+    // ── Videos ────────────────────────────────────────────────────────────────
+
+    // Default feed order: newest upload first (uploadDate DESC, fallback to id DESC)
+    @Query("SELECT * FROM videos ORDER BY uploadDate DESC, id DESC")
     fun getAllVideos(): Flow<List<VideoEntity>>
 
-    @Query("SELECT * FROM videos WHERE id = :id")
+    @Query("SELECT * FROM videos WHERE id = :id LIMIT 1")
     suspend fun getVideoById(id: String): VideoEntity?
 
-    @Query("SELECT * FROM videos WHERE isDownloaded = 1")
+    // Downloaded videos sorted by title for Library Downloads tab
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY title ASC")
     fun getDownloadedVideos(): Flow<List<VideoEntity>>
+
+    // Downloaded videos — SQL sort variants (Metrolist pattern: one query per sort)
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY title ASC")
+    fun downloadedByNameAsc(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY uploadDate DESC")
+    fun downloadedByDateDesc(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY size DESC")
+    fun downloadedBySizeDesc(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY duration DESC")
+    fun downloadedByDurationDesc(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY sourceLabel ASC, title ASC")
+    fun downloadedByChannel(): Flow<List<VideoEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVideo(video: VideoEntity)
@@ -29,8 +52,52 @@ interface VideoDao {
     @Delete
     suspend fun deleteVideo(video: VideoEntity)
 
-    @Query("SELECT * FROM videos WHERE title LIKE '%' || :query || '%'")
+    // Local Room search — title, sourceLabel. Used as Stage 1 instant results.
+    // Parameterized query prevents SQL injection (Room handles escaping automatically).
+    @Query("""
+        SELECT * FROM videos
+        WHERE title LIKE '%' || :query || '%'
+           OR sourceLabel LIKE '%' || :query || '%'
+        ORDER BY uploadDate DESC
+    """)
     fun searchVideos(query: String): Flow<List<VideoEntity>>
+
+    // Search within downloaded videos only (Library Downloads tab search bar)
+    @Query("""
+        SELECT * FROM videos
+        WHERE isDownloaded = 1
+          AND (title LIKE '%' || :query || '%' OR sourceLabel LIKE '%' || :query || '%')
+        ORDER BY title ASC
+    """)
+    fun searchDownloadedVideos(query: String): Flow<List<VideoEntity>>
+
+    // Continue Watching: join watch_progress to get only videos with saved progress,
+    // ordered by most recently watched. Avoids loading all videos into memory.
+    @Query("""
+        SELECT v.* FROM videos v
+        INNER JOIN watch_progress wp ON v.id = wp.videoId
+        WHERE wp.lastPosition > 0
+        ORDER BY wp.lastWatchedAt DESC
+        LIMIT 10
+    """)
+    fun getVideosWithProgress(): Flow<List<VideoEntity>>
+
+    // Count downloaded videos — used by storage stats without loading full list
+    @Query("SELECT COUNT(*) FROM videos WHERE isDownloaded = 1")
+    suspend fun countDownloadedVideos(): Int
+
+    // Total size of downloaded videos — SQL SUM avoids loading all rows
+    @Query("SELECT COALESCE(SUM(size), 0) FROM videos WHERE isDownloaded = 1")
+    suspend fun totalDownloadedSize(): Long
+
+    @Query("DELETE FROM downloads")
+    suspend fun deleteAllDownloads()
+
+    @Query("DELETE FROM videos")
+    suspend fun deleteAllVideos()
+
+    @Query("DELETE FROM watch_progress")
+    suspend fun deleteAllWatchProgress()
 
     // ── Watch Progress ────────────────────────────────────────────────────────
 
@@ -40,6 +107,7 @@ interface VideoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveWatchProgress(progress: WatchProgressEntity)
 
+    // All watch progress ordered by most recently watched — used for Continue Watching
     @Query("SELECT * FROM watch_progress ORDER BY lastWatchedAt DESC")
     fun getAllWatchProgress(): Flow<List<WatchProgressEntity>>
 
@@ -51,6 +119,10 @@ interface VideoDao {
     @Query("SELECT * FROM downloads")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
 
+    // Active downloads only (DOWNLOADING or QUEUED) — used for active section in Library
+    @Query("SELECT * FROM downloads WHERE state IN ('DOWNLOADING', 'QUEUED', 'PAUSED')")
+    fun getActiveDownloads(): Flow<List<DownloadEntity>>
+
     @Query("SELECT * FROM downloads WHERE videoId = :videoId")
     suspend fun getDownload(videoId: String): DownloadEntity?
 
@@ -60,16 +132,15 @@ interface VideoDao {
     @Query("DELETE FROM downloads WHERE videoId = :videoId")
     suspend fun deleteDownload(videoId: String)
 
-    @Query("DELETE FROM downloads")
-    suspend fun deleteAllDownloads()
-
-    @Query("DELETE FROM videos")
-    suspend fun deleteAllVideos()
-
-    @Query("DELETE FROM watch_progress")
-    suspend fun deleteAllWatchProgress()
-
     // ── Favorites ─────────────────────────────────────────────────────────────
+
+    // Favorites joined with video metadata — avoids separate lookup per item
+    @Query("""
+        SELECT v.* FROM videos v
+        INNER JOIN favorites f ON v.id = f.videoId
+        ORDER BY f.addedAt DESC
+    """)
+    fun getFavoriteVideos(): Flow<List<VideoEntity>>
 
     @Query("SELECT * FROM favorites ORDER BY addedAt DESC")
     fun getAllFavorites(): Flow<List<FavoriteEntity>>
@@ -88,6 +159,14 @@ interface VideoDao {
 
     // ── Watch Later ───────────────────────────────────────────────────────────
 
+    // Watch Later joined with video metadata
+    @Query("""
+        SELECT v.* FROM videos v
+        INNER JOIN watch_later wl ON v.id = wl.videoId
+        ORDER BY wl.addedAt DESC
+    """)
+    fun getWatchLaterVideos(): Flow<List<VideoEntity>>
+
     @Query("SELECT * FROM watch_later ORDER BY addedAt DESC")
     fun getAllWatchLater(): Flow<List<WatchLaterEntity>>
 
@@ -104,6 +183,14 @@ interface VideoDao {
     suspend fun deleteAllWatchLater()
 
     // ── Watch History ─────────────────────────────────────────────────────────
+
+    // History joined with video metadata — latest watch always at top
+    @Query("""
+        SELECT v.* FROM videos v
+        INNER JOIN watch_history wh ON v.id = wh.videoId
+        ORDER BY wh.watchedAt DESC
+    """)
+    fun getHistoryVideos(): Flow<List<VideoEntity>>
 
     @Query("SELECT * FROM watch_history ORDER BY watchedAt DESC")
     fun getAllWatchHistory(): Flow<List<WatchHistoryEntity>>

@@ -14,11 +14,13 @@ import com.trixsearch.hasikit.telegram.domain.model.AuthState
 import com.trixsearch.hasikit.telegram.domain.model.TelegramMedia
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramAuthRepository
 import com.trixsearch.hasikit.telegram.domain.repository.TelegramChannelRepository
+import com.trixsearch.hasikit.search.SearchEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
@@ -345,31 +347,95 @@ class HomeViewModel @Inject constructor(
         fetchThumbnails(allMedia)
     }
 
-    // Bug fix #9/#10: Telegram search — search TDLib directly across all resolved sources
-    // Returns video results from file name, caption, and full channel history scan
-    private val _searchResults = MutableStateFlow<List<com.trixsearch.hasikit.domain.model.Video>>(emptyList())
-    val searchResults: StateFlow<List<com.trixsearch.hasikit.domain.model.Video>> = _searchResults
+    // ── Smart Search V4 ────────────────────────────────────────────────────────
+    //
+    // 3-stage pipeline:
+    //   Stage 1 — Instant local Room search (returns immediately while Stage 2 runs)
+    //   Stage 2 — Telegram multi-query search across all resolved sources
+    //   Stage 3 — Smart ranking via SearchEngine (score 0–100, filter < 50)
+    //
+    // SearchEngine.parseIntent() extracts: movie name, year, audio language,
+    // subtitle language, audio type, quality from the raw query.
+    // toTelegramQueryVariants() expands into multiple Telegram queries so
+    // "pushpa hindi 1080p" searches "pushpa", "pushpa Hindi", "pushpa 1080p", etc.
+
+    private val _searchResults = MutableStateFlow<List<Video>>(emptyList())
+    val searchResults: StateFlow<List<Video>> = _searchResults
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    // Parsed intent exposed so HomeScreen can show intent chips (year, language, quality)
+    private val _searchIntent = MutableStateFlow<SearchEngine.SearchIntent?>(null)
+    val searchIntent: StateFlow<SearchEngine.SearchIntent?> = _searchIntent
+
     fun searchTelegram(query: String) {
-        if (query.isBlank()) { _searchResults.value = emptyList(); return }
+        if (query.isBlank()) { clearSearch(); return }
         viewModelScope.launch {
             _isSearching.value = true
             _searchResults.value = emptyList()
-            Log.d(TAG, "[SEARCH] Telegram search query='$query' sources=${_sourcePages.value.size}")
-            val results = mutableListOf<com.trixsearch.hasikit.domain.model.Video>()
+
+            // Parse query into structured intent
+            val intent = SearchEngine.parseIntent(query)
+            _searchIntent.value = intent
+            Log.d(TAG, "[SEARCH] intent: movie='${intent.movieName}' year=${intent.year} audio=${intent.audioLanguage} sub=${intent.subtitleLanguage} quality=${intent.quality} variants=${intent.toTelegramQueryVariants()}")
+
+            // Stage 1: Instant local Room search — emit immediately so UI shows something
+            // while Telegram search is in progress
+            val localVideos = repository.searchVideos(intent.movieName)
+                .first()
+                .ifEmpty { repository.searchVideos(query).first() }
+
+            // Score and rank local results
+            val localRanked = localVideos.mapNotNull { video ->
+                val s = SearchEngine.scoreVideo(
+                    intent,
+                    SearchEngine.VideoFields(
+                        title = video.title,
+                        fileName = video.telegramFileId, // best we have locally
+                        caption = "",
+                        sourceLabel = video.sourceLabel
+                    )
+                )
+                if (s >= SearchEngine.SCORE_IGNORE_BELOW)
+                    SearchEngine.SearchResult(video, s, "local")
+                else null
+            }
+            // Emit local results immediately so UI is not blank during Telegram search
+            if (localRanked.isNotEmpty()) {
+                _searchResults.value = SearchEngine.rank(localRanked).map { it.item }
+                Log.d(TAG, "[SEARCH] Stage-1 local: ${localRanked.size} results emitted")
+            }
+
+            // Stage 2: Telegram multi-query search across all resolved sources
+            val telegramResults = mutableListOf<Video>()
             val seenIds = mutableSetOf<String>()
+            val queryVariants = intent.toTelegramQueryVariants()
+
             _sourcePages.value.forEach { page ->
-                val mediaList = channelRepository.searchChannelMedia(page.chatId, query, 100)
-                    .getOrNull() ?: return@forEach
-                Log.d(TAG, "[SEARCH] source='${page.source.displayName}' results=${mediaList.size}")
+                val mediaList = channelRepository.searchChannelMediaMulti(
+                    page.chatId, queryVariants, 100
+                ).getOrNull() ?: return@forEach
+
+                Log.d(TAG, "[SEARCH] Stage-2 source='${page.source.displayName}' raw=${mediaList.size}")
+
                 mediaList.forEach { media ->
                     val id = "${media.channelId}_${media.messageId}"
-                    if (seenIds.add(id)) {
-                        results.add(
-                            com.trixsearch.hasikit.domain.model.Video(
+                    if (!seenIds.add(id)) return@forEach
+
+                    // Stage 3: Score each Telegram result with SearchEngine
+                    val s = SearchEngine.scoreVideo(
+                        intent,
+                        SearchEngine.VideoFields(
+                            title = media.title,
+                            fileName = media.fileName,
+                            caption = media.caption,
+                            sourceLabel = page.source.displayName
+                        )
+                    )
+                    if (s >= SearchEngine.SCORE_IGNORE_BELOW) {
+                        telegramResults.add(
+                            Video(
                                 id = id,
                                 title = media.title.ifBlank { media.fileName },
                                 thumbnail = _thumbnailCache.value[media.thumbnailFileId],
@@ -386,15 +452,61 @@ class HomeViewModel @Inject constructor(
                     }
                 }
             }
-            Log.d(TAG, "[SEARCH] total results=${results.size} for query='$query'")
-            _searchResults.value = results
+
+            // Merge local + Telegram results, re-rank the combined set
+            val allCandidates = mutableListOf<SearchEngine.SearchResult<Video>>()
+
+            // Re-score local results (they already have thumbnails/download state)
+            localVideos.forEach { video ->
+                val s = SearchEngine.scoreVideo(
+                    intent,
+                    SearchEngine.VideoFields(
+                        title = video.title,
+                        fileName = video.telegramFileId,
+                        caption = "",
+                        sourceLabel = video.sourceLabel
+                    )
+                )
+                if (s >= SearchEngine.SCORE_IGNORE_BELOW && !seenIds.contains(video.id)) {
+                    seenIds.add(video.id)
+                    allCandidates.add(SearchEngine.SearchResult(video, s, "local"))
+                }
+            }
+
+            // Score Telegram results
+            telegramResults.forEach { video ->
+                val s = SearchEngine.scoreVideo(
+                    intent,
+                    SearchEngine.VideoFields(
+                        title = video.title,
+                        fileName = video.telegramFileId,
+                        caption = "",
+                        sourceLabel = video.sourceLabel
+                    )
+                )
+                allCandidates.add(SearchEngine.SearchResult(video, s, "telegram"))
+            }
+
+            val ranked = SearchEngine.rank(allCandidates)
+            Log.d(TAG, "[SEARCH] Stage-3 ranked: ${ranked.size} results (local=${localRanked.size} telegram=${telegramResults.size})")
+
+            _searchResults.value = ranked.map { it.item }
             _isSearching.value = false
+
+            // Fetch thumbnails for new Telegram results in background
+            val newMedia = _sourcePages.value.flatMap { it.media }
+                .filter { media ->
+                    val id = "${media.channelId}_${media.messageId}"
+                    telegramResults.any { it.id == id }
+                }
+            if (newMedia.isNotEmpty()) fetchThumbnails(newMedia)
         }
     }
 
     fun clearSearch() {
         _searchResults.value = emptyList()
         _isSearching.value = false
+        _searchIntent.value = null
     }
 
     fun startDownload(video: Video) {

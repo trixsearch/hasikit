@@ -17,12 +17,12 @@ import com.trixsearch.hasikit.data.local.entities.WatchProgressEntity
         VideoEntity::class,
         WatchProgressEntity::class,
         DownloadEntity::class,
-        // Version 2: persistent library tables — no dependency on cache or download state
         FavoriteEntity::class,
         WatchLaterEntity::class,
         WatchHistoryEntity::class
     ],
-    version = 2,
+    // Version 3: added sourceLabel, isStreamable, uploadDate columns to videos table
+    version = 3,
     exportSchema = false
 )
 abstract class HasikitDatabase : RoomDatabase() {
@@ -56,6 +56,19 @@ abstract class HasikitDatabase : RoomDatabase() {
                         "`source` TEXT NOT NULL, " +
                         "`watchedAt` INTEGER NOT NULL)"
                 )
+            }
+        }
+
+        // Migration 2→3: add sourceLabel, isStreamable, uploadDate to videos table
+        // These columns enable SQL-level sorting/filtering in VideoDao (Metrolist pattern)
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Add sourceLabel column — default empty string for existing rows
+                db.execSQL("ALTER TABLE `videos` ADD COLUMN `sourceLabel` TEXT NOT NULL DEFAULT ''")
+                // Add isStreamable column — default true (existing rows are MessageVideo)
+                db.execSQL("ALTER TABLE `videos` ADD COLUMN `isStreamable` INTEGER NOT NULL DEFAULT 1")
+                // Add uploadDate column — default 0 for existing rows (will be populated on next feed load)
+                db.execSQL("ALTER TABLE `videos` ADD COLUMN `uploadDate` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
