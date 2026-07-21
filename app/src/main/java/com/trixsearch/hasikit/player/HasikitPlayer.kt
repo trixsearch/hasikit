@@ -348,7 +348,9 @@ class HasikitPlayer @Inject constructor(
         val dur = player.duration.coerceAtLeast(0L)
         val clamped = position.coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE)
         val state = player.playbackState
-        Log.d(TAG, "[SEEK] requestedPos=${position}ms targetPos=${clamped}ms currentPos=${player.currentPosition}ms duration=${dur}ms state=$state isSeekable=${player.isCurrentMediaItemSeekable} isLocal=${player.currentMediaItem?.localConfiguration?.uri?.scheme == \"file\"}")
+        // Bug fix #6: log currentPos, duration, targetPos, isLocal for seek debugging
+        val isLocal = player.currentMediaItem?.localConfiguration?.uri?.scheme == "file"
+        Log.d(TAG, "[SEEK] requestedPos=${position}ms targetPos=${clamped}ms currentPos=${player.currentPosition}ms duration=${dur}ms state=$state isSeekable=${player.isCurrentMediaItemSeekable} isLocal=$isLocal")
         when (state) {
             Player.STATE_READY, Player.STATE_ENDED -> {
                 player.seekTo(clamped)
