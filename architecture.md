@@ -380,6 +380,63 @@ Dark theme is the default design target.
 
 ---
 
+## Build Troubleshooting
+
+### R.jar File Lock (Windows) — Root Cause
+
+**Error:** `The process cannot access the file because it is being used by another process.`  
+**File:** `app/build/intermediates/compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar`
+
+**The R.jar lock is a symptom, not the root cause.**
+
+The actual failure chain (confirmed by `.kotlin/errors/` logs):
+
+```
+Kotlin compile daemon runs out of heap
+        ↓
+Daemon crashes mid-compile ("Could not connect to Kotlin compile daemon" after 4 retries)
+        ↓
+Crashed daemon's JVM process stays alive on Windows
+        ↓
+Open file handles on R.jar and shrunk-classpath-snapshot.bin are not released
+        ↓
+Next build tries to write R.jar → "process cannot access the file"
+```
+
+**Why the Kotlin daemon crashes:**
+
+With `-Xmx2048m` on the Gradle daemon and no explicit Kotlin daemon heap, all three JVM processes compete for memory:
+- Gradle daemon (task orchestration)
+- Kotlin compile daemon (Compose compiler + incremental compilation)
+- KAPT worker (Hilt + Room + HiltWorker = 3 annotation processing rounds)
+
+The Kotlin daemon defaults to 700m heap. The Compose compiler alone needs ~500m for this project. Under memory pressure it crashes, leaving handles open.
+
+**Fixes Applied:**
+
+| Setting | Before | After | Reason |
+|---|---|---|---|
+| `org.gradle.jvmargs` | `-Xmx2048m` | `-Xmx4096m -XX:MaxMetaspaceSize=1024m` | Gradle daemon no longer starves other processes |
+| `kotlin.daemon.jvm.options` | unset (defaults to 700m) | `-Xmx2048m -XX:MaxMetaspaceSize=512m` | Kotlin daemon gets dedicated heap; no longer crashes mid-compile |
+| `org.gradle.configuration-cache` | `true` | `false` | CC held additional file handles that compounded the lock on Windows |
+| `kapt.use.worker.api` | unset | `true` | KAPT runs in isolated worker process, not competing with daemon heap |
+| `kapt.incremental.apt` | unset | `false` | Prevents stale snapshot conflicts after daemon crash recovery |
+| `org.gradle.daemon.idletimeout` | unset | `900000` (15 min) | Kills lingering crashed daemon processes that hold file handles |
+
+**Recovery if it still occurs:**
+
+Run `clean-rebuild.bat` from the project root. This stops all daemons (releasing all handles), removes build outputs, and rebuilds clean.
+
+**Windows Defender Exclusion (strongly recommended):**  
+Add to Windows Security → Virus & threat protection → Exclusions:
+- `E:\trixproj\hasikit\app\build`
+- `E:\trixproj\hasikit\.gradle`
+- `%USERPROFILE%\.gradle\caches`
+
+Defender scanning build outputs mid-compile is a secondary cause of daemon crashes on Windows.
+
+---
+
 ## Architecture Decisions
 
 ### 2026-07-21 — Stability Fix Pass

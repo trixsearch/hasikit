@@ -243,6 +243,17 @@
 | 11 | Favorites / Watch Later / History not visible | Library screen rebuilt with 4-tab layout; all three Room tables now exposed via `LibraryViewModel` StateFlows |
 | 12 | Re-download uses old deleted path | `startDownload` and `resumeDownload` always read `customDownloadPath.value` at enqueue time; logged with `[DOWNLOAD_PATH]` |
 
+### Build Stability Fix — 2026-07-21
+
+| # | Issue | Fix |
+|---|-------|-----|
+| B1 | R.jar locked by stale process on Windows | Disabled `org.gradle.configuration-cache` (primary cause: holds exclusive file handles on intermediates between builds) |
+| B2 | Gradle daemon OOM-stalls mid-task, leaves handles open | Increased JVM heap from `-Xmx2048m` to `-Xmx4096m -XX:MaxMetaspaceSize=1024m` |
+| B3 | KAPT reads R.jar while AGP still holds write lock | Enabled `kapt.use.worker.api=true` (KAPT runs in isolated worker process, not in Gradle daemon JVM) |
+| B4 | Incremental KAPT reads stale R.jar snapshots | Disabled `kapt.incremental.apt` |
+| B5 | Stale daemons linger and hold locks across sessions | Added `org.gradle.daemon.idletimeout=900000` (15-minute kill) |
+| B6 | No recovery path without manual folder deletion | Added `deepClean` Gradle task + `clean-rebuild.bat` script |
+
 ### Stability Fix Pass — 2026-07-21
 
 | # | Issue | Fix |
@@ -301,83 +312,4 @@
 - Subscription keys / activation codes
 - Next-video queue for auto-play (currently restarts same video)
 - Adaptive streaming quality selection
-
-
-Hasikit Stability Fix Pass : User requested fixes for 5 issues in priority order: black screen playback, search freezing, login flash, storage management screen, and long-press video menu. All 5 fixes were implemented across multiple files.
-
-Files and Code Summary
-HomeViewModel.kt ( ui/screens/home/): Added searchJob: Job? field. Replaced single viewModelScope.launch in searchTelegram() with job-tracked coroutine that cancels previous job, adds 300ms debounce, wraps Room search in withContext(Dispatchers.IO), wraps Telegram search loop in withContext(Dispatchers.IO). Added addFavorite, removeFavorite, addWatchLater, removeWatchLater methods. Added favoriteIds and watchLaterIds StateFlows from Room. Added imports for FavoriteEntity, WatchLaterEntity, Job, withContext.
-
-HomeScreen.kt ( ui/screens/home/): Added combinedClickable import. HorizontalVideoCard refactored to use combinedClickable (long-press opens context menu AlertDialog). Menu options: View Info, Add/Remove Favorites, Add/Remove Watch Later, Download controls (Pause/Resume/Delete), Share, Cancel. Added isFavorite, isWatchLater, onAddFavorite, onRemoveFavorite, onAddWatchLater, onRemoveWatchLater parameters. Collected favoriteIds and watchLaterIds in HomeScreen. Both HorizontalVideoCard call sites updated with new callbacks.
-
-PlayerScreen.kt ( ui/screens/player/): Added playerInitialized: Boolean state variable. In DisposableEffect(videoId), sets playerInitialized = true after player.initialize() and resets to false on dispose. AndroidView update block now does view.player = null then view.player = instance when playerInitialized is true, forcing TextureView re-bind to fix black screen.
-
-TelegramAuthRepositoryImpl.kt ( telegram/data/repository/): Added detailed [AUTH_RESTORE] debug logs to restoreSession() — logs start state, session string length, success with userId/displayName, and failure reasons.
-
-NavGraph.kt ( ui/navigation/): Added Log import. Added comment clarifying login flash fix design. Added StorageManagementScreen import and composable(Screen.StorageManagement.route) registration.
-
-Screen.kt ( ui/navigation/): Added object StorageManagement : Screen("storage_management").
-
-StorageManagementScreen.kt ( ui/screens/settings/) — NEW FILE : Full storage management screen with checkboxes for Clear Cache, Clear Thumbnail Cache, Clear Player Cache, Clear Downloads. Apply button with confirmation dialog. Force Telegram Reset hidden under "More Options" TextButton. Storage stats overview at top. Uses SettingsViewModel.
-
-AdvancedSettingsScreen.kt ( ui/screens/settings/): Added Storage Management entry point at top of Cache group, navigates to Screen.StorageManagement.route.
-
-features.md / architecture.md: Updated with Stability Fix Pass entries documenting all 5 fixes, new debug log tags, and updated project structure.
-
-player_view_texture.xml ( res/layout/): Existing XML with app:surface_type="texture_view" — used by PlayerScreen to inflate PlayerView with TextureView surface.
-
-SettingsScreen.kt ( ui/screens/settings/): Contains SettingsViewModel with cacheSize, storageUsed, downloadCount StateFlows, clearCache(), clearThumbnailCache(), clearPlayerCache(), clearAllStorage(), forceDeleteSession() methods. settingsDataStore extension is internal. SettingsGroup composable is internal.
-
-AuthScreen.kt ( ui/screens/auth/): Already handles AuthState.Loading with spinner, AuthState.CodeSent with OTP screen, and Unauthenticated with phone form — architecture was correct for login flash prevention.
-
-VideoRepository.kt ( domain/repository/): Interface includes getAllFavorites(), getAllWatchLater(), addFavorite(), removeFavorite(), addToWatchLater(), removeFromWatchLater(), insertVideo().
-
-Key Insights
-Project : Android app "Hasikit" — Kotlin, Jetpack Compose, Media3 ExoPlayer, TDLib, Hilt, Room. Package: com.trixsearch.hasikit. Min SDK 26.
-
-Player singleton : HasikitPlayer is @Singleton — player.stop() on dispose, not release(). player.initialize() is idempotent (skips if already initialized).
-
-AuthState.Loading : _authState initialized to AuthState.Loading in TelegramAuthRepositoryImpl — session restore is async in MainActivity.lifecycleScope.launch.
-
-Search architecture : 3-stage pipeline — Stage 1 Room (instant), Stage 2 Telegram multi-query, Stage 3 SearchEngine ranking. searchChannelMediaMulti is the Telegram search method.
-
-TextureView black screen root cause : PlayerView surface binds before ExoPlayer instance is ready when player is @Singleton and reused. Fix: null-then-re-attach after initialize().
-
-combinedClickable requires @OptIn(ExperimentalFoundationApi::class) on the composable function.
-
-SettingsGroup is internal — accessible from StorageManagementScreen in same package.
-
-No new features : User explicitly stated "Do not add new features" — all changes are fixes only.
-
-Comments required : User requested "Add comments above every modified code block."
-
-Most Recent Topic
-Topic : Hasikit Stability Fix Pass — implementing 5 bug fixes
-
-Progress : All 5 fixes fully implemented and committed to files.
-
-Tools Used :
-
-listDirectory: Explored project structure to understand file layout
-
-fsRead (multiple) : Read HomeViewModel.kt, HomeScreen.kt, HasikitPlayer.kt, PlayerScreen.kt, MainActivity.kt, AdvancedSettingsScreen.kt, NavGraph.kt, TelegramModels.kt, SettingsScreen.kt, AuthScreen.kt, AuthViewModel.kt, player_view_texture.xml, VideoRepository.kt, TelegramAuthRepositoryImpl.kt, Screen.kt, features.md, architecture.md
-
-fsReplace on HomeViewModel.kt: Added Job import, withContext import, FavoriteEntity/ WatchLaterEntity imports; replaced searchTelegram() with debounced/cancellable/IO-threaded version; added favorites/watchlater methods and StateFlows
-
-fsReplace on HomeScreen.kt: Added combinedClickable import, VideoRepository import; added favoriteIds/ watchLaterIds collection; replaced HorizontalVideoCard with long-press menu version; updated both call sites
-
-fsReplace on PlayerScreen.kt: Added playerInitialized state; updated DisposableEffect to set flag; updated AndroidView update block for null-then-reattach fix
-
-fsReplace on TelegramAuthRepositoryImpl.kt: Added [AUTH_RESTORE] debug logs
-
-fsReplace on NavGraph.kt: Added Log import, StorageManagementScreen import, route registration, login flash comment
-
-fsReplace on Screen.kt: Added StorageManagement route object
-
-fsWrite (create) StorageManagementScreen.kt: Created new file with full storage management UI
-
-fsReplace on AdvancedSettingsScreen.kt: Added Storage Management entry point
-
-fsReplace on features.md and architecture.md: Updated documentation
-
 
