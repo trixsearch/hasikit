@@ -178,7 +178,10 @@
 - Pause download (cancels WorkManager worker + TDLib CancelDownloadFile)
 - Resume download (re-enqueues WorkManager worker)
 - Retry download (deletes old record, starts fresh)
-- Delete download (cancels worker, deletes physical file, clears DB record)
+- Delete download: respects `deleteFilesOnDelete` setting
+  - ON (default): deletes physical file immediately from storage
+  - OFF: moves file to `.trash/` folder (`<Movies parent>/.trash/`)
+- Re-download checks `.trash/` first via `restoreFromTrash(title)` — restores instantly if match found
 - Stall detection: marks FAILED after 5 consecutive inactive polls
 - Exponential backoff retry (30s base)
 - Download path: always reads `customDownloadPath` at enqueue time (not cached)
@@ -211,8 +214,9 @@
   - After video ends: Auto Play Next Video / Repeat Same Video (radio group)
 - **Downloads settings:**
   - Wi-Fi only downloads toggle
-  - Download location picker (SAF folder picker)
+  - Download location picker (SAF folder picker, only enabled when Show In Gallery is ON)
   - Show in Gallery toggle (triggers MediaScanner)
+  - Delete Files When Deleted In App toggle (ON = immediate delete, OFF = move to trash)
 - **Appearance:** Theme selector (System / Light / Dark)
 - **Language:** navigates to Language screen
 - **Advanced Settings:** (separate screen)
@@ -277,6 +281,13 @@
 | 16 | Home feed shows 1-2 videos after app restart | TDLib cold-start undercount: first `getChannelMedia` call returns only 1 message because local DB hasn't loaded. Fixed by detecting `totalFetched < PAGE_SIZE` on startup and scheduling a single 2-second retry. `[FEED_STARTUP]` logs added. |
 | 17 | Share only shares text title | Long-press Share now uses `FileProvider` to share actual video file if downloaded; falls back to Telegram link; falls back to title+channel text. `[SHARE]` logs added. |
 | 18 | Watch Later / Favorites / History have no actions | All three tabs now show Play (navigates to player), Share, and Remove buttons per item. History sorted newest-first. `[WATCH_LATER]`, `[FAVORITES]`, `[HISTORY]` logs added. |
+| 19 | Search returns unrelated videos ("poshpa" matches "Snakes and Ladders") | `score()` word-all-match now filters candidate words shorter than 3 chars — prevents `"poshpa".contains("a")` matching unrelated titles via single-char words like "a" |
+| 20 | `loadMore()` runs during search, bleeding feed into results | `OnNearBottom` prefetch suppressed when `searchQuery` is not blank — `loadMore()` only called when no search is active |
+| 21 | Skeleton disappears during startup retry, showing 1-2 videos briefly | `isLoading` stays `true` during the 2-second cold-start retry; `isLoadingAllSources` reset before retry call; skeleton visible until full feed is ready |
+| 22 | View Info shows a temporary toast | Replaced with a proper `AlertDialog` showing Title, Channel, Size, Duration, Streamable, Downloaded, Local Path, Telegram Link — stays open until user dismisses |
+| 23 | Download Location picker enabled even when Gallery is OFF | Download Location row disabled and greyed out when Show In Gallery is OFF; explanation text shown |
+| 24 | Deleted files may remain in storage | `deleteDownload()` now respects `deleteFilesOnDelete` flag: ON = immediate delete, OFF = move to `.trash/` folder |
+| 25 | Re-downloading a trashed file re-downloads from network | `startDownload()` checks `.trash/` first via `restoreFromTrash(title)`; restores instantly if match found |
 
 ### Build Stability Fix — 2026-07-21
 

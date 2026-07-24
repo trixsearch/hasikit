@@ -184,6 +184,7 @@ com.trixsearch.hasikit:layout/notification_media_cancel_action = 0x7f0c0018
 com.trixsearch.hasikit:layout/notification_action = 0x7f0c0015
 com.trixsearch.hasikit:layout/media3_notification_template_media_custom = 0x7f0c0014
 com.trixsearch.hasikit:style/ExoStyledControls.Button.Bottom.VR = 0x7f100017
+com.trixsearch.hasikit:xml/file_provider_paths = 0x7f120002
 com.trixsearch.hasikit:string/call_notification_ongoing_text = 0x7f0f0007
 com.trixsearch.hasikit:attr/pause_icon = 0x7f040033
 com.trixsearch.hasikit:integer/m3c_window_layout_in_display_cutout_mode = 0x7f0b0003

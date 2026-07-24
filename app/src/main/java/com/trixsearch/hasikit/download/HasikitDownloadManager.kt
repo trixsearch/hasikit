@@ -49,6 +49,9 @@ class HasikitDownloadManager @Inject constructor(
     // Gallery visibility — synced from SettingsViewModel; used by DownloadWorker to decide storage location
     val galleryVisible = MutableStateFlow(false)
 
+    // Delete files when deleted in app — true = immediate delete, false = move to trash
+    val deleteFilesOnDelete = MutableStateFlow(true)
+
     // Bug fix #4: Thumbnail cache invalidation signal — SettingsViewModel increments this after
     // clearing thumbnail cache; HomeViewModel observes it and calls invalidateAndReloadThumbnails()
     val thumbnailCacheVersion = MutableStateFlow(0)
@@ -74,40 +77,54 @@ class HasikitDownloadManager @Inject constructor(
         Log.d(TAG, "startDownload videoId=${video.id} fileId=$fileId title='${video.title}'")
 
         scope.launch {
+            // Trash restore: if deleteFilesOnDelete=false and a matching file exists in trash,
+            // restore it immediately instead of downloading again
+            val restoredPath = if (!deleteFilesOnDelete.value) restoreFromTrash(video.title) else null
+            if (restoredPath != null) {
+                Log.d(TAG, "startDownload restored from trash videoId=${video.id} path=$restoredPath")
+                repository.insertVideo(video)
+                repository.saveDownload(
+                    DownloadTask(videoId = video.id, state = DownloadState.COMPLETED, progress = 1f, localPath = restoredPath)
+                )
+                repository.updateVideo(video.copy(isDownloaded = true, localPath = restoredPath, downloadProgress = 1f))
+                return@launch
+            }
+
             repository.saveDownload(
                 DownloadTask(videoId = video.id, state = DownloadState.QUEUED, progress = 0f)
             )
             repository.insertVideo(video)
-        }
 
-        // Bug fix #12: read current customDownloadPath at enqueue time — never cache old path
-        val destDir = customDownloadPath.value.takeIf { it.isNotBlank() }
-        Log.d(TAG, "[DOWNLOAD_PATH] startDownload videoId=${video.id} destDir=$destDir")
-        val inputData = DownloadWorker.buildInputData(
-            videoId = video.id,
-            telegramFileId = video.telegramFileId,
-            title = video.title,
-            destDir = destDir
-        )
-
-        val request = OneTimeWorkRequestBuilder<DownloadWorker>()
-            .setInputData(inputData)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
+            // Bug fix #12: read current customDownloadPath at enqueue time — never cache old path
+            val destDir = customDownloadPath.value.takeIf { it.isNotBlank() }
+            Log.d(TAG, "[DOWNLOAD_PATH] startDownload videoId=${video.id} destDir=$destDir")
+            val inputData = DownloadWorker.buildInputData(
+                videoId = video.id,
+                telegramFileId = video.telegramFileId,
+                title = video.title,
+                destDir = destDir
             )
-            // Exponential backoff — retry after 30s on transient failures
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .build()
 
-        // KEEP_EXISTING prevents re-enqueuing if already running for this video
-        workManager.enqueueUniqueWork(
-            DownloadWorker.workName(video.id),
-            ExistingWorkPolicy.KEEP,
-            request
-        )
-        Log.d(TAG, "startDownload enqueued WorkManager job for videoId=${video.id}")
+            val request = OneTimeWorkRequestBuilder<DownloadWorker>()
+                .setInputData(inputData)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                // Exponential backoff — retry after 30s on transient failures
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build()
+
+            // KEEP_EXISTING prevents re-enqueuing if already running for this video
+            workManager.enqueueUniqueWork(
+                DownloadWorker.workName(video.id),
+                ExistingWorkPolicy.KEEP,
+                request
+            )
+            Log.d(TAG, "startDownload enqueued WorkManager job for videoId=${video.id}")
+        }
+    }
     }
 
     // Pause — cancels the WorkManager worker and marks state as PAUSED in DB
@@ -176,13 +193,22 @@ class HasikitDownloadManager @Inject constructor(
         startDownload(video)
     }
 
-    // Delete download — removes physical file, DB entry, and cancels any active worker
-    // Two-state model: after deletion the video is NOT DOWNLOADED and must be streamed or re-downloaded
+    // Trash folder path — files moved here when deleteFilesOnDelete=false
+    private fun trashDir(): File {
+        val base = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+            ?: context.filesDir
+        return File(base.parentFile ?: base, ".trash").also { it.mkdirs() }
+    }
+
+    // Delete download — removes or trashes physical file, clears DB entry, cancels active worker.
+    // Behaviour controlled by deleteFilesOnDelete flag:
+    //   true  → delete file immediately from storage
+    //   false → move file to .trash folder; re-download checks trash first
     fun deleteDownload(videoId: String) {
         scope.launch {
             val task = repository.getDownload(videoId)
             val video = repository.getVideoById(videoId)
-            Log.d(TAG, "deleteDownload videoId=$videoId localPath=${video?.localPath} taskPath=${task?.localPath}")
+            Log.d(TAG, "deleteDownload videoId=$videoId localPath=${video?.localPath} taskPath=${task?.localPath} deleteImmediate=${deleteFilesOnDelete.value}")
 
             // Cancel WorkManager worker if running
             workManager.cancelUniqueWork(DownloadWorker.workName(videoId))
@@ -192,17 +218,28 @@ class HasikitDownloadManager @Inject constructor(
                 telegramClientService.send(TdApi.CancelDownloadFile(fileId.toInt(), false)) {}
             }
 
-            // Delete permanent file from task localPath
-            task?.localPath?.let { path ->
-                val deleted = File(path).delete()
-                Log.d(TAG, "deleteDownload deleted task file $path: $deleted")
+            // Collect all physical file paths to handle
+            val paths = buildSet {
+                task?.localPath?.let { add(it) }
+                video?.localPath?.let { add(it) }
             }
 
-            // Delete permanent file from video localPath if different from task path
-            video?.localPath?.let { path ->
-                if (path != task?.localPath) {
+            if (deleteFilesOnDelete.value) {
+                // Immediate delete — remove files from storage
+                paths.forEach { path ->
                     val deleted = File(path).delete()
-                    Log.d(TAG, "deleteDownload deleted video file $path: $deleted")
+                    Log.d(TAG, "deleteDownload deleted $path: $deleted")
+                }
+            } else {
+                // Trash mode — move files to .trash folder and record metadata
+                val trash = trashDir()
+                paths.forEach { path ->
+                    val src = File(path)
+                    if (src.exists()) {
+                        val dest = File(trash, src.name)
+                        val moved = src.renameTo(dest)
+                        Log.d(TAG, "deleteDownload trashed $path → ${dest.absolutePath}: $moved")
+                    }
                 }
             }
 
@@ -219,6 +256,25 @@ class HasikitDownloadManager @Inject constructor(
 
             Log.d(TAG, "deleteDownload complete videoId=$videoId")
         }
+    }
+
+    // Check trash for a previously deleted file and restore it if found.
+    // Called by startDownload before enqueuing a new WorkManager job.
+    // Returns the restored local path if successful, null otherwise.
+    fun restoreFromTrash(title: String): String? {
+        val trash = trashDir()
+        if (!trash.exists()) return null
+        // Match by sanitised title prefix — same logic DownloadWorker uses for file naming
+        val sanitised = title.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").take(80)
+        val match = trash.listFiles()?.firstOrNull { it.name.startsWith(sanitised) } ?: return null
+        val dest = File(
+            context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: context.filesDir,
+            match.name
+        )
+        return if (match.renameTo(dest)) {
+            Log.d(TAG, "restoreFromTrash restored ${match.name} → ${dest.absolutePath}")
+            dest.absolutePath
+        } else null
     }
 
     // Observe WorkManager state for a specific video — used by UI to show live progress

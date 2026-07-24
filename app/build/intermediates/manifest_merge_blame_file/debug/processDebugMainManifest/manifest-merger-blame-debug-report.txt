@@ -62,7 +62,7 @@
 33-->[androidx.core:core:1.13.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\08da3d26635c20fd67a9aa7464960d4e\transformed\core-1.13.1\AndroidManifest.xml:26:22-94
 34
 35    <application
-35-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:22:5-82:19
+35-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:22:5-93:19
 36        android:name="com.trixsearch.hasikit.HasikitApp"
 36-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:23:9-35
 37        android:allowBackup="true"
@@ -117,333 +117,351 @@
 64-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:31:17-49
 65        </provider>
 66
-67        <activity
-67-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:46:9-80:20
-68            android:name="com.trixsearch.hasikit.MainActivity"
-68-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:47:13-41
-69            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|navigation"
-69-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:54:13-126
-70            android:enableOnBackInvokedCallback="true"
-70-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:53:13-55
-71            android:exported="true"
-71-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:48:13-36
-72            android:label="@string/app_name"
-72-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:49:13-45
-73            android:supportsPictureInPicture="true"
-73-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:52:13-52
-74            android:theme="@style/Theme.Hasikit"
-74-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:50:13-49
-75            android:windowSoftInputMode="adjustResize" >
-75-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:51:13-55
-76            <intent-filter>
-76-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:55:13-58:29
-77                <action android:name="android.intent.action.MAIN" />
-77-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:56:17-69
-77-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:56:25-66
-78
-79                <category android:name="android.intent.category.LAUNCHER" />
-79-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:57:17-77
-79-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:57:27-74
-80            </intent-filter>
-81            <intent-filter>
-81-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:59:13-64:29
-82                <action android:name="android.intent.action.VIEW" />
-82-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:17-69
-82-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:25-66
-83
-84                <category android:name="android.intent.category.DEFAULT" />
-84-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:17-76
-84-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:27-73
-85                <category android:name="android.intent.category.BROWSABLE" />
-85-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:62:17-78
-85-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:62:27-75
-86
-87                <data android:mimeType="video/*" />
-87-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:17-52
-87-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:23-49
-88            </intent-filter>
-89            <intent-filter>
-89-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:65:13-69:29
-90                <action android:name="android.intent.action.VIEW" />
-90-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:17-69
-90-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:25-66
-91
-92                <category android:name="android.intent.category.DEFAULT" />
-92-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:17-76
-92-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:27-73
-93
-94                <data android:mimeType="video/mp4" />
-94-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:17-52
-94-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:23-49
-95            </intent-filter>
-96            <intent-filter>
-96-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:70:13-74:29
-97                <action android:name="android.intent.action.VIEW" />
-97-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:17-69
-97-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:25-66
-98
-99                <category android:name="android.intent.category.DEFAULT" />
-99-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:17-76
-99-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:27-73
-100
-101                <data android:mimeType="video/x-matroska" />
-101-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:17-52
-101-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:23-49
-102            </intent-filter>
-103            <intent-filter>
-103-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:75:13-79:29
-104                <action android:name="android.intent.action.VIEW" />
-104-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:17-69
-104-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:25-66
-105
-106                <category android:name="android.intent.category.DEFAULT" />
-106-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:17-76
-106-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:27-73
-107
-108                <data android:mimeType="video/webm" />
-108-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:17-52
-108-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:23-49
-109            </intent-filter>
-110        </activity>
-111        <activity
-111-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:23:9-25:39
-112            android:name="androidx.compose.ui.tooling.PreviewActivity"
-112-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:24:13-71
-113            android:exported="true" />
-113-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:25:13-36
-114        <activity
-114-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:23:9-25:39
-115            android:name="androidx.activity.ComponentActivity"
-115-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:24:13-63
-116            android:exported="true" />
-116-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:25:13-36
-117
-118        <service
-118-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:39:9-45:35
-119            android:name="androidx.work.impl.background.systemalarm.SystemAlarmService"
-119-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:40:13-88
-120            android:directBootAware="false"
-120-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:41:13-44
-121            android:enabled="@bool/enable_system_alarm_service_default"
-121-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:42:13-72
-122            android:exported="false" />
-122-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:43:13-37
-123        <service
-123-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:46:9-52:35
-124            android:name="androidx.work.impl.background.systemjob.SystemJobService"
-124-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:47:13-84
-125            android:directBootAware="false"
-125-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:48:13-44
-126            android:enabled="@bool/enable_system_job_service_default"
-126-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:49:13-70
-127            android:exported="true"
-127-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:50:13-36
-128            android:permission="android.permission.BIND_JOB_SERVICE" />
-128-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:51:13-69
+67        <!-- FileProvider for sharing downloaded video files via ACTION_SEND -->
+68        <provider
+69            android:name="androidx.core.content.FileProvider"
+69-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:48:13-62
+70            android:authorities="com.trixsearch.hasikit.fileprovider"
+70-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:49:13-64
+71            android:exported="false"
+71-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:50:13-37
+72            android:grantUriPermissions="true" >
+72-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:51:13-47
+73            <meta-data
+73-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:52:13-54:63
+74                android:name="android.support.FILE_PROVIDER_PATHS"
+74-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:53:17-67
+75                android:resource="@xml/file_provider_paths" />
+75-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:54:17-60
+76        </provider>
+77
+78        <activity
+78-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:57:9-91:20
+79            android:name="com.trixsearch.hasikit.MainActivity"
+79-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:58:13-41
+80            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|navigation"
+80-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:65:13-126
+81            android:enableOnBackInvokedCallback="true"
+81-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:64:13-55
+82            android:exported="true"
+82-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:59:13-36
+83            android:label="@string/app_name"
+83-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:60:13-45
+84            android:supportsPictureInPicture="true"
+84-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:63:13-52
+85            android:theme="@style/Theme.Hasikit"
+85-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:61:13-49
+86            android:windowSoftInputMode="adjustResize" >
+86-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:62:13-55
+87            <intent-filter>
+87-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:66:13-69:29
+88                <action android:name="android.intent.action.MAIN" />
+88-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:67:17-69
+88-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:67:25-66
+89
+90                <category android:name="android.intent.category.LAUNCHER" />
+90-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:68:17-77
+90-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:68:27-74
+91            </intent-filter>
+92            <intent-filter>
+92-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:70:13-75:29
+93                <action android:name="android.intent.action.VIEW" />
+93-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:17-69
+93-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:25-66
+94
+95                <category android:name="android.intent.category.DEFAULT" />
+95-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:17-76
+95-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:27-73
+96                <category android:name="android.intent.category.BROWSABLE" />
+96-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:73:17-78
+96-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:73:27-75
+97
+98                <data android:mimeType="video/*" />
+98-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:17-52
+98-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:23-49
+99            </intent-filter>
+100            <intent-filter>
+100-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:76:13-80:29
+101                <action android:name="android.intent.action.VIEW" />
+101-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:17-69
+101-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:25-66
+102
+103                <category android:name="android.intent.category.DEFAULT" />
+103-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:17-76
+103-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:27-73
+104
+105                <data android:mimeType="video/mp4" />
+105-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:17-52
+105-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:23-49
+106            </intent-filter>
+107            <intent-filter>
+107-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:81:13-85:29
+108                <action android:name="android.intent.action.VIEW" />
+108-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:17-69
+108-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:25-66
+109
+110                <category android:name="android.intent.category.DEFAULT" />
+110-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:17-76
+110-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:27-73
+111
+112                <data android:mimeType="video/x-matroska" />
+112-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:17-52
+112-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:23-49
+113            </intent-filter>
+114            <intent-filter>
+114-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:86:13-90:29
+115                <action android:name="android.intent.action.VIEW" />
+115-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:17-69
+115-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:71:25-66
+116
+117                <category android:name="android.intent.category.DEFAULT" />
+117-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:17-76
+117-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:72:27-73
+118
+119                <data android:mimeType="video/webm" />
+119-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:17-52
+119-->E:\trixproj\hasikit\app\src\main\AndroidManifest.xml:74:23-49
+120            </intent-filter>
+121        </activity>
+122        <activity
+122-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:23:9-25:39
+123            android:name="androidx.compose.ui.tooling.PreviewActivity"
+123-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:24:13-71
+124            android:exported="true" />
+124-->[androidx.compose.ui:ui-tooling-android:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\4b87785ebc759a75e4dc976abb6dd99d\transformed\jetified-ui-tooling-release\AndroidManifest.xml:25:13-36
+125        <activity
+125-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:23:9-25:39
+126            android:name="androidx.activity.ComponentActivity"
+126-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:24:13-63
+127            android:exported="true" />
+127-->[androidx.compose.ui:ui-test-manifest:1.7.8] E:\trixproj\gradle catches\caches\8.14.2\transforms\3af0f7e9f3d4ac6c0a91a5ee8f7cbac8\transformed\jetified-ui-test-manifest-1.7.8\AndroidManifest.xml:25:13-36
+128
 129        <service
-129-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:53:9-59:35
-130            android:name="androidx.work.impl.foreground.SystemForegroundService"
-130-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:54:13-81
+129-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:39:9-45:35
+130            android:name="androidx.work.impl.background.systemalarm.SystemAlarmService"
+130-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:40:13-88
 131            android:directBootAware="false"
-131-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:55:13-44
-132            android:enabled="@bool/enable_system_foreground_service_default"
-132-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:56:13-77
+131-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:41:13-44
+132            android:enabled="@bool/enable_system_alarm_service_default"
+132-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:42:13-72
 133            android:exported="false" />
-133-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:57:13-37
-134
-135        <receiver
-135-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:61:9-66:35
-136            android:name="androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver"
-136-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:62:13-88
-137            android:directBootAware="false"
-137-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:63:13-44
-138            android:enabled="true"
-138-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:64:13-35
-139            android:exported="false" />
-139-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:65:13-37
-140        <receiver
-140-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:67:9-77:20
-141            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy"
-141-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:68:13-106
+133-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:43:13-37
+134        <service
+134-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:46:9-52:35
+135            android:name="androidx.work.impl.background.systemjob.SystemJobService"
+135-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:47:13-84
+136            android:directBootAware="false"
+136-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:48:13-44
+137            android:enabled="@bool/enable_system_job_service_default"
+137-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:49:13-70
+138            android:exported="true"
+138-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:50:13-36
+139            android:permission="android.permission.BIND_JOB_SERVICE" />
+139-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:51:13-69
+140        <service
+140-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:53:9-59:35
+141            android:name="androidx.work.impl.foreground.SystemForegroundService"
+141-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:54:13-81
 142            android:directBootAware="false"
-142-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:69:13-44
-143            android:enabled="false"
-143-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:70:13-36
-144            android:exported="false" >
-144-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:71:13-37
-145            <intent-filter>
-145-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:73:13-76:29
-146                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
-146-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:74:17-87
-146-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:74:25-84
-147                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
-147-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:75:17-90
-147-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:75:25-87
-148            </intent-filter>
-149        </receiver>
-150        <receiver
-150-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:78:9-88:20
-151            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy"
-151-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:79:13-104
-152            android:directBootAware="false"
-152-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:80:13-44
-153            android:enabled="false"
-153-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:81:13-36
-154            android:exported="false" >
-154-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:82:13-37
-155            <intent-filter>
-155-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:84:13-87:29
-156                <action android:name="android.intent.action.BATTERY_OKAY" />
-156-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:85:17-77
-156-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:85:25-74
-157                <action android:name="android.intent.action.BATTERY_LOW" />
-157-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:86:17-76
-157-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:86:25-73
-158            </intent-filter>
-159        </receiver>
-160        <receiver
-160-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:89:9-99:20
-161            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy"
-161-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:90:13-104
-162            android:directBootAware="false"
-162-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:91:13-44
-163            android:enabled="false"
-163-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:92:13-36
-164            android:exported="false" >
-164-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:93:13-37
-165            <intent-filter>
-165-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:95:13-98:29
-166                <action android:name="android.intent.action.DEVICE_STORAGE_LOW" />
-166-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:96:17-83
-166-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:96:25-80
-167                <action android:name="android.intent.action.DEVICE_STORAGE_OK" />
-167-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:97:17-82
-167-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:97:25-79
-168            </intent-filter>
-169        </receiver>
-170        <receiver
-170-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:100:9-109:20
-171            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy"
-171-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:101:13-103
-172            android:directBootAware="false"
-172-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:102:13-44
-173            android:enabled="false"
-173-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:103:13-36
-174            android:exported="false" >
-174-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:104:13-37
-175            <intent-filter>
-175-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:106:13-108:29
-176                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
-176-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:107:17-79
-176-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:107:25-76
-177            </intent-filter>
-178        </receiver>
-179        <receiver
-179-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:110:9-121:20
-180            android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver"
-180-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:111:13-88
-181            android:directBootAware="false"
-181-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:112:13-44
-182            android:enabled="false"
-182-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:113:13-36
-183            android:exported="false" >
-183-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:114:13-37
-184            <intent-filter>
-184-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:116:13-120:29
-185                <action android:name="android.intent.action.BOOT_COMPLETED" />
-185-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:117:17-79
-185-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:117:25-76
-186                <action android:name="android.intent.action.TIME_SET" />
-186-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:118:17-73
-186-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:118:25-70
-187                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-187-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:119:17-81
-187-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:119:25-78
+142-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:55:13-44
+143            android:enabled="@bool/enable_system_foreground_service_default"
+143-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:56:13-77
+144            android:exported="false" />
+144-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:57:13-37
+145
+146        <receiver
+146-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:61:9-66:35
+147            android:name="androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver"
+147-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:62:13-88
+148            android:directBootAware="false"
+148-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:63:13-44
+149            android:enabled="true"
+149-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:64:13-35
+150            android:exported="false" />
+150-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:65:13-37
+151        <receiver
+151-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:67:9-77:20
+152            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy"
+152-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:68:13-106
+153            android:directBootAware="false"
+153-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:69:13-44
+154            android:enabled="false"
+154-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:70:13-36
+155            android:exported="false" >
+155-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:71:13-37
+156            <intent-filter>
+156-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:73:13-76:29
+157                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+157-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:74:17-87
+157-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:74:25-84
+158                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+158-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:75:17-90
+158-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:75:25-87
+159            </intent-filter>
+160        </receiver>
+161        <receiver
+161-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:78:9-88:20
+162            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy"
+162-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:79:13-104
+163            android:directBootAware="false"
+163-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:80:13-44
+164            android:enabled="false"
+164-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:81:13-36
+165            android:exported="false" >
+165-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:82:13-37
+166            <intent-filter>
+166-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:84:13-87:29
+167                <action android:name="android.intent.action.BATTERY_OKAY" />
+167-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:85:17-77
+167-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:85:25-74
+168                <action android:name="android.intent.action.BATTERY_LOW" />
+168-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:86:17-76
+168-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:86:25-73
+169            </intent-filter>
+170        </receiver>
+171        <receiver
+171-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:89:9-99:20
+172            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy"
+172-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:90:13-104
+173            android:directBootAware="false"
+173-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:91:13-44
+174            android:enabled="false"
+174-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:92:13-36
+175            android:exported="false" >
+175-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:93:13-37
+176            <intent-filter>
+176-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:95:13-98:29
+177                <action android:name="android.intent.action.DEVICE_STORAGE_LOW" />
+177-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:96:17-83
+177-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:96:25-80
+178                <action android:name="android.intent.action.DEVICE_STORAGE_OK" />
+178-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:97:17-82
+178-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:97:25-79
+179            </intent-filter>
+180        </receiver>
+181        <receiver
+181-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:100:9-109:20
+182            android:name="androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy"
+182-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:101:13-103
+183            android:directBootAware="false"
+183-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:102:13-44
+184            android:enabled="false"
+184-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:103:13-36
+185            android:exported="false" >
+185-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:104:13-37
+186            <intent-filter>
+186-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:106:13-108:29
+187                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+187-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:107:17-79
+187-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:107:25-76
 188            </intent-filter>
 189        </receiver>
 190        <receiver
-190-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:122:9-131:20
-191            android:name="androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver"
-191-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:123:13-99
+190-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:110:9-121:20
+191            android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver"
+191-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:111:13-88
 192            android:directBootAware="false"
-192-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:124:13-44
-193            android:enabled="@bool/enable_system_alarm_service_default"
-193-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:125:13-72
+192-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:112:13-44
+193            android:enabled="false"
+193-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:113:13-36
 194            android:exported="false" >
-194-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:126:13-37
+194-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:114:13-37
 195            <intent-filter>
-195-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:128:13-130:29
-196                <action android:name="androidx.work.impl.background.systemalarm.UpdateProxies" />
-196-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:129:17-98
-196-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:129:25-95
-197            </intent-filter>
-198        </receiver>
-199        <receiver
-199-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:132:9-142:20
-200            android:name="androidx.work.impl.diagnostics.DiagnosticsReceiver"
-200-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:133:13-78
-201            android:directBootAware="false"
-201-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:134:13-44
-202            android:enabled="true"
-202-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:135:13-35
-203            android:exported="true"
-203-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:136:13-36
-204            android:permission="android.permission.DUMP" >
-204-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:137:13-57
-205            <intent-filter>
-205-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:139:13-141:29
-206                <action android:name="androidx.work.diagnostics.REQUEST_DIAGNOSTICS" />
-206-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:140:17-88
-206-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:140:25-85
-207            </intent-filter>
-208        </receiver>
-209
-210        <service
-210-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:24:9-28:63
-211            android:name="androidx.room.MultiInstanceInvalidationService"
-211-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:25:13-74
-212            android:directBootAware="true"
-212-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:26:13-43
-213            android:exported="false" />
-213-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:27:13-37
-214
-215        <receiver
-215-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:34:9-52:20
-216            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-216-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:35:13-76
-217            android:directBootAware="false"
-217-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:36:13-44
-218            android:enabled="true"
-218-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:37:13-35
-219            android:exported="true"
-219-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:38:13-36
-220            android:permission="android.permission.DUMP" >
-220-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:39:13-57
-221            <intent-filter>
-221-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:40:13-42:29
-222                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-222-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:17-91
-222-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:25-88
-223            </intent-filter>
-224            <intent-filter>
-224-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:43:13-45:29
-225                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-225-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:17-85
-225-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:25-82
-226            </intent-filter>
-227            <intent-filter>
-227-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:46:13-48:29
-228                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-228-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:17-88
-228-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:25-85
-229            </intent-filter>
-230            <intent-filter>
-230-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:49:13-51:29
-231                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-231-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:17-95
-231-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:25-92
-232            </intent-filter>
-233        </receiver>
-234    </application>
-235
-236</manifest>
+195-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:116:13-120:29
+196                <action android:name="android.intent.action.BOOT_COMPLETED" />
+196-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:117:17-79
+196-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:117:25-76
+197                <action android:name="android.intent.action.TIME_SET" />
+197-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:118:17-73
+197-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:118:25-70
+198                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+198-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:119:17-81
+198-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:119:25-78
+199            </intent-filter>
+200        </receiver>
+201        <receiver
+201-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:122:9-131:20
+202            android:name="androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver"
+202-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:123:13-99
+203            android:directBootAware="false"
+203-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:124:13-44
+204            android:enabled="@bool/enable_system_alarm_service_default"
+204-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:125:13-72
+205            android:exported="false" >
+205-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:126:13-37
+206            <intent-filter>
+206-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:128:13-130:29
+207                <action android:name="androidx.work.impl.background.systemalarm.UpdateProxies" />
+207-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:129:17-98
+207-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:129:25-95
+208            </intent-filter>
+209        </receiver>
+210        <receiver
+210-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:132:9-142:20
+211            android:name="androidx.work.impl.diagnostics.DiagnosticsReceiver"
+211-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:133:13-78
+212            android:directBootAware="false"
+212-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:134:13-44
+213            android:enabled="true"
+213-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:135:13-35
+214            android:exported="true"
+214-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:136:13-36
+215            android:permission="android.permission.DUMP" >
+215-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:137:13-57
+216            <intent-filter>
+216-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:139:13-141:29
+217                <action android:name="androidx.work.diagnostics.REQUEST_DIAGNOSTICS" />
+217-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:140:17-88
+217-->[androidx.work:work-runtime:2.10.1] E:\trixproj\gradle catches\caches\8.14.2\transforms\c7de5f97d5d1adc38c280178b2483034\transformed\work-runtime-2.10.1\AndroidManifest.xml:140:25-85
+218            </intent-filter>
+219        </receiver>
+220
+221        <service
+221-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:24:9-28:63
+222            android:name="androidx.room.MultiInstanceInvalidationService"
+222-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:25:13-74
+223            android:directBootAware="true"
+223-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:26:13-43
+224            android:exported="false" />
+224-->[androidx.room:room-runtime-android:2.8.4] E:\trixproj\gradle catches\caches\8.14.2\transforms\668b3e28a4863b4ad9d1b51d42c92953\transformed\jetified-room-runtime\AndroidManifest.xml:27:13-37
+225
+226        <receiver
+226-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:34:9-52:20
+227            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+227-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:35:13-76
+228            android:directBootAware="false"
+228-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:36:13-44
+229            android:enabled="true"
+229-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:37:13-35
+230            android:exported="true"
+230-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:38:13-36
+231            android:permission="android.permission.DUMP" >
+231-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:39:13-57
+232            <intent-filter>
+232-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:40:13-42:29
+233                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+233-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:17-91
+233-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:25-88
+234            </intent-filter>
+235            <intent-filter>
+235-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:43:13-45:29
+236                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+236-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:17-85
+236-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:25-82
+237            </intent-filter>
+238            <intent-filter>
+238-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:46:13-48:29
+239                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+239-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:17-88
+239-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:25-85
+240            </intent-filter>
+241            <intent-filter>
+241-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:49:13-51:29
+242                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+242-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:17-95
+242-->[androidx.profileinstaller:profileinstaller:1.4.0] E:\trixproj\gradle catches\caches\8.14.2\transforms\3cfc6a43769920706637943cc199c65e\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:25-92
+243            </intent-filter>
+244        </receiver>
+245    </application>
+246
+247</manifest>

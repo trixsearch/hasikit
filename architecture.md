@@ -253,6 +253,9 @@ Rules:
 - Pause: cancels WorkManager worker + TDLib CancelDownloadFile
 - Resume: re-enqueues WorkManager worker
 - No hidden video cache — only explicit user downloads
+- `deleteFilesOnDelete` flag (default true): ON = immediate file delete, OFF = move to `.trash/` folder
+- `restoreFromTrash(title)` called by `startDownload` before enqueuing — restores instantly if match found in `.trash/`
+- Trash folder: `<Movies parent>/.trash/` created on demand
 
 ---
 
@@ -471,6 +474,17 @@ Defender scanning build outputs mid-compile is a secondary cause of daemon crash
 ---
 
 ## Architecture Decisions
+
+### 2026-07-24 — Critical Search + Startup + Storage Fixes
+
+- Search isolation: `OnNearBottom` prefetch suppressed when `searchQuery` is not blank — `loadMore()` no longer bleeds feed content into search results
+- Fuzzy match false positives fixed: `score()` word-all-match filters candidate words shorter than 3 chars — prevents `"poshpa".contains("a")` matching unrelated titles via single-char words
+- Startup skeleton during retry: `isLoading` stays `true` during 2-second cold-start retry; `isLoadingAllSources` reset before retry; skeleton visible until full feed ready
+- View Info dialog: replaced toast with `AlertDialog` showing full video metadata (Title, Channel, Size, Duration, Streamable, Downloaded, Local Path, Telegram Link)
+- Download Location dependency: picker disabled when Show In Gallery is OFF; explanation text shown
+- `deleteFilesOnDelete` flag added to `HasikitDownloadManager` (default true); synced from `SettingsViewModel` via DataStore key `delete_files_on_delete`
+- Trash system: `trashDir()` returns `<Movies parent>/.trash/`; `deleteDownload()` moves files there when flag is OFF; `restoreFromTrash(title)` called by `startDownload()` before enqueuing WorkManager job
+- `deleteFilesOnDelete` setting added to Downloads section in `SettingsScreen`
 
 ### 2026-07-24 — Core Bug Fix Pass
 

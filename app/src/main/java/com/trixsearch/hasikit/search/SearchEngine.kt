@@ -169,9 +169,12 @@ object SearchEngine {
         if (normalizedCandidate.startsWith(normalizedQuery)) return SCORE_STARTS_WITH
         if (normalizedCandidate.contains(normalizedQuery)) return SCORE_CONTAINS
 
-        val queryWords = normalizedQuery.split(" ").filter { it.length > 1 }
-        val candidateWords = normalizedCandidate.split(" ").toSet()
-        if (queryWords.isNotEmpty() && queryWords.all { qw ->
+        // Word-all-match: every query word must appear in (or contain) a candidate word.
+        // Candidate words shorter than 3 chars are excluded to prevent false positives:
+        // e.g. "poshpa".contains("a") would match "snakes and laders" via the word "a".
+        val queryWords = normalizedQuery.split(" ").filter { it.length > 2 }
+        val candidateWords = normalizedCandidate.split(" ").filter { it.length > 2 }.toSet()
+        if (queryWords.isNotEmpty() && candidateWords.isNotEmpty() && queryWords.all { qw ->
                 candidateWords.any { cw -> cw.contains(qw) || qw.contains(cw) }
             }) {
             return SCORE_CONTAINS - 2

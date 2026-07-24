@@ -274,20 +274,21 @@ class HomeViewModel @Inject constructor(
             val totalFetched = resolvedPages.sumOf { it.media.size }
             Log.d(TAG, "[FEED_STARTUP] loadAllSources complete: sources=${resolvedPages.size} totalVideos=$totalFetched")
 
-            // isLoading=false only after pages are set so skeleton shows until data is ready
-            _isLoading.value = false
-            isLoadingAllSources = false
-
-            // Startup retry: TDLib cold-start sometimes returns only 1 message per channel
-            // because the local message DB hasn't fully loaded. If we got suspiciously few
-            // videos on startup, schedule a single retry after 2 seconds.
+            // isLoading=false only after pages are set so skeleton shows until data is ready.
+            // Keep isLoading=true during startup retry so skeleton stays visible until full feed loads.
             if (isStartup && !startupRetryScheduled && totalFetched < PAGE_SIZE && resolvedPages.isNotEmpty()) {
                 startupRetryScheduled = true
                 Log.d(TAG, "[FEED_STARTUP] cold-start undercount detected (got $totalFetched < $PAGE_SIZE) — scheduling retry in 2s")
+                // Do NOT set isLoading=false yet — keep skeleton visible during retry
                 delay(2000L)
                 Log.d(TAG, "[FEED_STARTUP] retry firing")
+                isLoadingAllSources = false
                 loadAllSources(isStartup = false)
+                return@launch
             }
+
+            _isLoading.value = false
+            isLoadingAllSources = false
         }
     }
 

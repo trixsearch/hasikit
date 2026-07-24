@@ -17,3 +17,4 @@ string app_name
 style Theme.Hasikit
 xml backup_rules
 xml data_extraction_rules
+xml file_provider_paths

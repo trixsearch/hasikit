@@ -84,7 +84,11 @@ fun HomeScreen(
     val favoriteIds by viewModel.favoriteIds.collectAsState()
     val watchLaterIds by viewModel.watchLaterIds.collectAsState()
 
-    listState.OnNearBottom(threshold = viewModel.prefetchThreshold) { viewModel.loadMore() }
+    // Search isolation: suppress infinite-scroll prefetch while a search query is active.
+    // loadMore() appends to _sourcePages which would bleed feed content into search results.
+    listState.OnNearBottom(threshold = viewModel.prefetchThreshold) {
+        if (searchQuery.isBlank()) viewModel.loadMore()
+    }
 
     // Search debounce is handled in HomeViewModel.searchTelegram (300ms + Job cancellation)
     // LaunchedEffect fires on each query change; ViewModel cancels the previous job automatically
@@ -518,6 +522,8 @@ fun HorizontalVideoCard(
     var showDownloadMenu by remember { mutableStateOf(false) }
     // Long-press context menu state
     var showContextMenu by remember { mutableStateOf(false) }
+    // View Info dialog state — replaces the previous toast
+    var showInfoDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -676,17 +682,13 @@ fun HorizontalVideoCard(
                         }
                     )
                     HorizontalDivider()
-                    // ℹ View Info
+                    // ℹ View Info — opens a proper dialog instead of a toast
                     DropdownMenuItem(
                         text = { Text("View Info") },
                         leadingIcon = { Icon(Icons.Default.Info, null, modifier = Modifier.size(20.dp)) },
                         onClick = {
                             showContextMenu = false
-                            android.widget.Toast.makeText(
-                                context,
-                                "${video.title}\n${formatBytes(video.size)} • ${formatTime(video.duration)}\n${video.sourceLabel}",
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
+                            showInfoDialog = true
                         }
                     )
                     HorizontalDivider()
@@ -818,9 +820,46 @@ fun HorizontalVideoCard(
             }
         )
     }
+    // View Info dialog — shows full video metadata, stays open until user dismisses
+    if (showInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            icon = { Icon(Icons.Default.Info, null) },
+            title = {
+                Text(
+                    video.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    @Composable
+                    fun InfoRow(label: String, value: String) {
+                        if (value.isBlank()) return
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(100.dp))
+                            Text(value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    InfoRow("Channel", video.sourceLabel)
+                    InfoRow("Size", if (video.size > 0) formatBytes(video.size) else "—")
+                    InfoRow("Duration", if (video.duration > 0) formatTime(video.duration) else "—")
+                    InfoRow("Streamable", if (video.isStreamable) "Yes" else "No")
+                    InfoRow("Downloaded", if (video.isDownloaded) "Yes" else "No")
+                    if (!video.localPath.isNullOrBlank()) InfoRow("Local Path", video.localPath)
+                    if (!video.telegramLink.isNullOrBlank()) InfoRow("Telegram", video.telegramLink)
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showInfoDialog = false }) { Text("Close") }
+            }
+        )
+    }
 }
-
-// Thumbnail fallback: try Telegram path first, then generate from local video file, then Hasikit logo
 @Composable
 fun VideoThumbnail(url: String?, localVideoPath: String? = null, modifier: Modifier = Modifier) {
     // TDLib returns raw file paths — prefix with file:// for Coil

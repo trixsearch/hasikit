@@ -76,6 +76,8 @@ private val KEY_BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
 private val KEY_CUSTOM_ASPECT_RATIOS = stringPreferencesKey("custom_aspect_ratios")
 // Autoplay next video after completion — true = auto play next, false = repeat same
 private val KEY_AUTOPLAY_NEXT = booleanPreferencesKey("autoplay_next_video")
+// Delete files when deleted in app — true = delete immediately, false = move to trash
+private val KEY_DELETE_FILES_ON_DELETE = booleanPreferencesKey("delete_files_on_delete")
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -152,6 +154,13 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoplayNext(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_AUTOPLAY_NEXT] = v } }
 
+    // Delete files when deleted in app — default ON (immediate delete)
+    val deleteFilesOnDelete: StateFlow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_DELETE_FILES_ON_DELETE] ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setDeleteFilesOnDelete(v: Boolean) = viewModelScope.launch { context.settingsDataStore.edit { it[KEY_DELETE_FILES_ON_DELETE] = v } }
+
     fun addCustomAspectRatio(ratio: String) {
         viewModelScope.launch {
             val current = customAspectRatios.value.toMutableList()
@@ -189,6 +198,12 @@ class SettingsViewModel @Inject constructor(
             galleryVisible.collect { visible ->
                 downloadManager.galleryVisible.value = visible
                 Log.d(TAG, "galleryVisible synced to downloadManager: $visible")
+            }
+        }
+        // Sync deleteFilesOnDelete preference to download manager on startup
+        viewModelScope.launch {
+            deleteFilesOnDelete.collect { v ->
+                downloadManager.deleteFilesOnDelete.value = v
             }
         }
     }
@@ -617,6 +632,8 @@ fun SettingsScreen(
     val backgroundAudio by viewModel.backgroundAudio.collectAsState()
     // Autoplay next video preference
     val autoplayNext by viewModel.autoplayNext.collectAsState()
+    // Delete files when deleted in app preference
+    val deleteFilesOnDelete by viewModel.deleteFilesOnDelete.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -723,7 +740,9 @@ fun SettingsScreen(
                             galleryVisible = galleryVisible,
                             onGalleryVisible = viewModel::setGalleryVisible,
                             downloadPath = downloadPath,
-                            onPickFolder = viewModel::setDownloadPath
+                            onPickFolder = viewModel::setDownloadPath,
+                            deleteFilesOnDelete = deleteFilesOnDelete,
+                            onDeleteFilesOnDelete = viewModel::setDeleteFilesOnDelete
                         )
                         "appearance" -> AppearanceSection(appTheme, onThemeClick = { showThemeDialog = true })
                         "language" -> LanguageSection(onClick = { navController.navigate(Screen.Language.route) })
@@ -1205,7 +1224,10 @@ private fun DownloadsSection(
     galleryVisible: Boolean,
     onGalleryVisible: (Boolean) -> Unit,
     downloadPath: String,
-    onPickFolder: (String) -> Unit
+    onPickFolder: (String) -> Unit,
+    // Delete files when deleted in app — true = immediate delete, false = move to trash
+    deleteFilesOnDelete: Boolean,
+    onDeleteFilesOnDelete: (Boolean) -> Unit
 ) {
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -1219,11 +1241,41 @@ private fun DownloadsSection(
     SettingsGroup("Downloads", Icons.Default.Download) {
         SettingsToggleRow(Icons.Default.Wifi, "Wi-Fi Only", "Only download on Wi-Fi", wifiOnly, onWifiOnly)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        SettingsClickRow(
-            icon = Icons.Default.FolderOpen,
-            title = "Download Location",
-            subtitle = displayPath,
-            onClick = { folderPickerLauncher.launch(null) }
+        // Download Location is only enabled when Show In Gallery is ON.
+        // When gallery is OFF, files go to app-private storage which cannot be user-selected.
+        ListItem(
+            headlineContent = {
+                Text(
+                    "Download Location",
+                    fontWeight = FontWeight.Medium,
+                    color = if (galleryVisible) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
+            },
+            supportingContent = {
+                Text(
+                    if (galleryVisible) displayPath
+                    else "Enable \"Show in Gallery\" to choose a custom location",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (galleryVisible) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            },
+            leadingContent = {
+                Icon(
+                    Icons.Default.FolderOpen, null,
+                    tint = if (galleryVisible) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                )
+            },
+            trailingContent = {
+                Icon(
+                    Icons.Default.ChevronRight, null,
+                    tint = if (galleryVisible) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                )
+            },
+            modifier = if (galleryVisible) Modifier.clickable { folderPickerLauncher.launch(null) } else Modifier
         )
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         SettingsToggleRow(
@@ -1232,6 +1284,16 @@ private fun DownloadsSection(
             subtitle = "Make downloaded videos visible in Gallery apps",
             checked = galleryVisible,
             onCheckedChange = onGalleryVisible
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        // Delete files when deleted in app — ON = immediate delete, OFF = move to trash folder
+        SettingsToggleRow(
+            icon = Icons.Default.DeleteForever,
+            title = "Delete Files When Deleted In App",
+            subtitle = if (deleteFilesOnDelete) "Files are permanently deleted immediately"
+                       else "Files are moved to trash (Download/Hasikit/.trash/)",
+            checked = deleteFilesOnDelete,
+            onCheckedChange = onDeleteFilesOnDelete
         )
     }
 }

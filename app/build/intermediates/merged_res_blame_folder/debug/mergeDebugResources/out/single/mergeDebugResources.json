@@ -1,74 +1,78 @@
 [
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xhdpi_ic_launcher_round.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xhdpi/ic_launcher_round.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-anydpi-v26\\ic_launcher_round.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xxhdpi/ic_launcher_round.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\drawable_ic_launcher_background.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\drawable\\ic_launcher_background.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xxxhdpi/ic_launcher_round.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xxxhdpi_ic_launcher_round.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xxxhdpi\\ic_launcher_round.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/drawable_hasikitsmico.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/drawable/hasikitsmico.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-anydpi-v26\\ic_launcher.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/drawable_ic_launcher_background.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/drawable/ic_launcher_background.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xhdpi_ic_launcher.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xhdpi\\ic_launcher.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/xml_data_extraction_rules.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/xml/data_extraction_rules.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xhdpi_ic_launcher_round.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xhdpi\\ic_launcher_round.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-hdpi_ic_launcher.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-hdpi/ic_launcher.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xxxhdpi_ic_launcher.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xxxhdpi\\ic_launcher.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-mdpi_ic_launcher_round.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-mdpi/ic_launcher_round.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\drawable_ic_launcher_foreground.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\drawable\\ic_launcher_foreground.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-anydpi-v26/ic_launcher.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xxhdpi_ic_launcher_round.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xxhdpi\\ic_launcher_round.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/xml_backup_rules.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/xml/backup_rules.xml"
+        "merged": "com.trixsearch.hasikit.app-debug-76:/xml_file_provider_paths.xml.flat",
+        "source": "com.trixsearch.hasikit.app-main-78:/xml/file_provider_paths.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-hdpi_ic_launcher_round.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-hdpi/ic_launcher_round.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-mdpi_ic_launcher.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-mdpi\\ic_launcher.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/drawable_ic_launcher_foreground.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/drawable/ic_launcher_foreground.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-hdpi_ic_launcher.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-hdpi\\ic_launcher.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-mdpi_ic_launcher.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-mdpi/ic_launcher.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\xml_data_extraction_rules.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\xml\\data_extraction_rules.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/layout_player_view_texture.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/layout/player_view_texture.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-hdpi_ic_launcher_round.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-hdpi\\ic_launcher_round.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xhdpi_ic_launcher.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xhdpi/ic_launcher.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-xxhdpi_ic_launcher.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-xxhdpi\\ic_launcher.webp"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xxxhdpi_ic_launcher.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xxxhdpi/ic_launcher.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\drawable_hasikitsmico.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\drawable\\hasikitsmico.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-xxhdpi_ic_launcher.webp.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-xxhdpi/ic_launcher.webp"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\layout_player_view_texture.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\layout\\player_view_texture.xml"
     },
     {
-        "merged": "com.trixsearch.hasikit.app-debug-76:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
-        "source": "com.trixsearch.hasikit.app-main-78:/mipmap-anydpi-v26/ic_launcher_round.xml"
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\mipmap-mdpi_ic_launcher_round.webp.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\mipmap-mdpi\\ic_launcher_round.webp"
+    },
+    {
+        "merged": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-debug-76:\\xml_backup_rules.xml.flat",
+        "source": "E:\\trixproj\\gradle catches\\daemon\\8.14.2\\com.trixsearch.hasikit.app-main-78:\\xml\\backup_rules.xml"
     }
 ]
