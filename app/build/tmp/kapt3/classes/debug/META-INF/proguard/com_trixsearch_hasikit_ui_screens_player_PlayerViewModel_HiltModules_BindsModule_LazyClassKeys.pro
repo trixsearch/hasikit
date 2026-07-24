@@ -1,1 +1,0 @@
--keep,allowobfuscation,allowshrinking class com.trixsearch.hasikit.ui.screens.player.PlayerViewModel
