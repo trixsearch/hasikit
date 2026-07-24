@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -473,7 +474,7 @@ fun LibraryScreen(
                 }
             }
             1 -> {
-                // Bug fix #11: Favorites tab
+                // Favorites tab — Play, Share, Remove actions per item
                 if (favorites.isEmpty()) {
                     Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -487,6 +488,7 @@ fun LibraryScreen(
                     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                         item { SectionLabel("Favorites (${favorites.size})", Icons.Default.VideoLibrary) }
                         items(favorites, key = { it.videoId }) { fav ->
+                            // Favorites card with Play, Share, Remove actions
                             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     AsyncImage(model = fav.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
@@ -495,7 +497,30 @@ fun LibraryScreen(
                                         Text(fav.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(fav.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                     }
-                                    IconButton(onClick = { viewModel.removeFavorite(fav.videoId) }) {
+                                    // ▶ Play
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[FAVORITES] play videoId=${fav.videoId}")
+                                        navController.navigate(Screen.Player.createRoute(fav.videoId))
+                                    }) {
+                                        Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    }
+                                    // 📤 Share Telegram link or title
+                                    val favContext = androidx.compose.ui.platform.LocalContext.current
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[FAVORITES] share videoId=${fav.videoId}")
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_TEXT, "${fav.title} \u2014 ${fav.source} \u2014 shared from Hasikit")
+                                        }
+                                        favContext.startActivity(android.content.Intent.createChooser(shareIntent, "Share via"))
+                                    }) {
+                                        Icon(Icons.Default.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                    }
+                                    // ❤ Remove
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[FAVORITES] remove videoId=${fav.videoId}")
+                                        viewModel.removeFavorite(fav.videoId)
+                                    }) {
                                         Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                     }
                                 }
@@ -505,7 +530,7 @@ fun LibraryScreen(
                 }
             }
             2 -> {
-                // Bug fix #11: Watch Later tab
+                // Watch Later tab — Play, Share, Remove actions per item
                 if (watchLater.isEmpty()) {
                     Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -519,6 +544,7 @@ fun LibraryScreen(
                     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                         item { SectionLabel("Watch Later (${watchLater.size})", Icons.Default.VideoLibrary) }
                         items(watchLater, key = { it.videoId }) { item ->
+                            // Watch Later card with Play, Share, Remove actions
                             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     AsyncImage(model = item.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
@@ -527,7 +553,30 @@ fun LibraryScreen(
                                         Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(item.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                     }
-                                    IconButton(onClick = { viewModel.removeFromWatchLater(item.videoId) }) {
+                                    // ▶ Play
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[WATCH_LATER] play videoId=${item.videoId}")
+                                        navController.navigate(Screen.Player.createRoute(item.videoId))
+                                    }) {
+                                        Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    }
+                                    // 📤 Share
+                                    val wlContext = androidx.compose.ui.platform.LocalContext.current
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[WATCH_LATER] share videoId=${item.videoId}")
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_TEXT, "${item.title} \u2014 ${item.source} \u2014 shared from Hasikit")
+                                        }
+                                        wlContext.startActivity(android.content.Intent.createChooser(shareIntent, "Share via"))
+                                    }) {
+                                        Icon(Icons.Default.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                    }
+                                    // 🗑 Remove
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[WATCH_LATER] remove videoId=${item.videoId}")
+                                        viewModel.removeFromWatchLater(item.videoId)
+                                    }) {
                                         Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                     }
                                 }
@@ -537,7 +586,7 @@ fun LibraryScreen(
                 }
             }
             3 -> {
-                // Bug fix #11: History tab
+                // History tab — Resume (Play), Share, Remove actions; newest first
                 if (watchHistory.isEmpty()) {
                     Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -548,9 +597,12 @@ fun LibraryScreen(
                         }
                     }
                 } else {
+                    // Sort history newest first so most recently watched is always at top
+                    val sortedHistory = remember(watchHistory) { watchHistory.sortedByDescending { it.watchedAt } }
                     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-                        item { SectionLabel("History (${watchHistory.size})", Icons.Default.VideoLibrary) }
-                        items(watchHistory, key = { it.videoId }) { item ->
+                        item { SectionLabel("History (${sortedHistory.size})", Icons.Default.VideoLibrary) }
+                        items(sortedHistory, key = { it.videoId }) { item ->
+                            // History card with Resume, Share, Remove actions
                             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     AsyncImage(model = item.thumbnail, contentDescription = null, modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
@@ -559,7 +611,30 @@ fun LibraryScreen(
                                         Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(item.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                     }
-                                    IconButton(onClick = { viewModel.removeFromHistory(item.videoId) }) {
+                                    // ▶ Resume (navigates to player which restores last position)
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[HISTORY] resume videoId=${item.videoId}")
+                                        navController.navigate(Screen.Player.createRoute(item.videoId))
+                                    }) {
+                                        Icon(Icons.Default.PlayArrow, "Resume", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    }
+                                    // 📤 Share
+                                    val histContext = androidx.compose.ui.platform.LocalContext.current
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[HISTORY] share videoId=${item.videoId}")
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_TEXT, "${item.title} \u2014 ${item.source} \u2014 shared from Hasikit")
+                                        }
+                                        histContext.startActivity(android.content.Intent.createChooser(shareIntent, "Share via"))
+                                    }) {
+                                        Icon(Icons.Default.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                    }
+                                    // 🗑 Remove from history
+                                    IconButton(onClick = {
+                                        Log.d(TAG, "[HISTORY] remove videoId=${item.videoId}")
+                                        viewModel.removeFromHistory(item.videoId)
+                                    }) {
                                         Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                     }
                                 }

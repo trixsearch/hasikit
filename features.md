@@ -43,11 +43,40 @@
 
 ### Search
 - Search bar on Home screen
-- **Telegram direct search** — queries TDLib `SearchChatMessages` across all resolved sources
-  - Stage A: video-type messages (caption + text search)
-  - Stage A2: document-type messages (MKV/large files sent as documents)
-  - Stage B: full channel history scan matching file name, title, caption
-- "Searching Telegram…" spinner shown while search is in progress
+- **Smart Search V4** — 3-stage pipeline via `SearchEngine` + `HomeViewModel.searchTelegram`
+  - Stage 1: instant Room search on IO thread, results emitted immediately
+  - Stage 2: Telegram multi-query search via `searchChannelMediaMulti` across all resolved sources
+  - Stage 3: fuzzy ranking via `SearchEngine.rank()` — score 0–100, results below 50 filtered out
+- **SearchEngine** (`search/SearchEngine.kt`) — pure Kotlin object, no Android dependencies
+  - `parseIntent(query)` — extracts movie name, year, audio language, subtitle language, audio type, quality from raw query
+  - `toTelegramQueryVariants()` — expands intent into multiple Telegram queries (e.g. "pushpa hindi 1080p" → ["pushpa", "pushpa Hindi", "pushpa 1080p", "pushpa Hindi 1080p"])
+  - `normalize(raw)` — strips codecs, resolution tags, language tokens, dots/underscores; collapses repeated letters to 1 (baahubali→bahubali, pushpaa→pushpa)
+  - `score(query, candidate)` — exact (100) → startsWith (90) → contains (80) → word-all-match (78) → full-string fuzzy (60–79) → word-level fuzzy (60–79)
+  - `scoreVideo(intent, fields)` — scores title + fileName + caption, adds bonus for year/language/quality match; logs normalized query, field scores, and threshold decision
+  - `levenshtein(a, b)` — O(n*m) edit distance, no early-exit (early-exit was causing multi-word titles like "Pushpa The Rise" to score 0 against "poshpa")
+  - `stringSimilarity(a, b)` — private helper returning 0.0–1.0 similarity ratio
+- **Search intent chips** — shown below search bar when query has structured fields (year, language, quality, audio type)
+- Empty search state: "No videos found" with spelling tips and **Request Content** button that navigates directly to `RequestContentScreen`
+- Search mode never shows feed content — `return@LazyColumn` after search block prevents any feed sections from rendering when query is active
+
+### Home Feed Startup
+- TDLib cold-start undercount fix: `loadAllSources(isStartup=true)` detects `totalFetched < PAGE_SIZE` and schedules a single 2-second retry
+- `startupRetryScheduled` flag prevents multiple retries
+- `[FEED_STARTUP]` logs: source list, total videos fetched, retry trigger
+
+### Share System
+- Long-press Share uses `FileProvider` (`${applicationId}.fileprovider`) to share actual video file when downloaded
+- Falls back to Telegram link text if not downloaded
+- Falls back to title + channel text if no Telegram link
+- Copy Telegram Link option added to long-press menu
+- `telegramLink` field added to `Video` domain model — computed as `https://t.me/c/{positiveChannelId}/{messageId}`
+- `file_provider_paths.xml` added to `res/xml/`; `FileProvider` declared in `AndroidManifest.xml`
+
+### Library UX
+- Favorites tab: Play (navigate to player), Share, Remove buttons per item
+- Watch Later tab: Play (navigate to player), Share, Remove buttons per item
+- History tab: Resume (navigate to player), Share, Remove buttons per item; sorted newest-first by `watchedAt`
+- `[FAVORITES]`, `[WATCH_LATER]`, `[HISTORY]` debug logs added
 - Results show only video items (MP4, MKV, WebM, MOV, M4V)
 - Clear search restores full feed
 
@@ -242,6 +271,12 @@
 | 10 | Home search is local-only | Same fix as #9 — `LaunchedEffect(searchQuery)` triggers `searchTelegram()` |
 | 11 | Favorites / Watch Later / History not visible | Library screen rebuilt with 4-tab layout; all three Room tables now exposed via `LibraryViewModel` StateFlows |
 | 12 | Re-download uses old deleted path | `startDownload` and `resumeDownload` always read `customDownloadPath.value` at enqueue time; logged with `[DOWNLOAD_PATH]` |
+| 13 | "poshpa" doesn't match "Pushpa" | Removed aggressive early-exit from `levenshtein()`; repeated letters collapsed to 1 in `normalize()`; word-level fuzzy threshold lowered to 0.6 |
+| 14 | Search empty state shows feed content | `return@LazyColumn` confirmed present; search block always returns before feed sections render |
+| 15 | No results shows blank screen | Empty search state shows: "No videos found", spelling tips, and **Request Content** button |
+| 16 | Home feed shows 1-2 videos after app restart | TDLib cold-start undercount: first `getChannelMedia` call returns only 1 message because local DB hasn't loaded. Fixed by detecting `totalFetched < PAGE_SIZE` on startup and scheduling a single 2-second retry. `[FEED_STARTUP]` logs added. |
+| 17 | Share only shares text title | Long-press Share now uses `FileProvider` to share actual video file if downloaded; falls back to Telegram link; falls back to title+channel text. `[SHARE]` logs added. |
+| 18 | Watch Later / Favorites / History have no actions | All three tabs now show Play (navigates to player), Share, and Remove buttons per item. History sorted newest-first. `[WATCH_LATER]`, `[FAVORITES]`, `[HISTORY]` logs added. |
 
 ### Build Stability Fix — 2026-07-21
 
@@ -273,8 +308,10 @@
 | `[SEEK]` | `HasikitPlayer.seekTo` | requestedPos, targetPos, currentPos, duration, state, isSeekable, isLocal |
 | `[THUMBNAIL]` | `HomeViewModel.fetchThumbnails` | fileId and resolved path per thumbnail |
 | `[THUMBNAIL]` | `HomeViewModel.invalidateAndReloadThumbnails` | cache invalidation event |
-| `[SEARCH]` | `HomeViewModel.searchTelegram` | query, source name, result count per source, total, timing (ms) |
+| `[SEARCH]` | `HomeViewModel.searchTelegram` | query, normalizedName, source name, result count per source, total, timing (ms) |
+| `[SEARCH]` | `HomeViewModel.searchTelegram` | accepted/rejected candidate counts after ranking |
 | `[SEARCH]` | `HomeViewModel.searchTelegram` | job cancellation logged when new query arrives |
+| `[SCORE]` | `SearchEngine.scoreVideo` | normalized query, normalized title, per-field scores (title/file/caption), best score, threshold |
 | `[AUTH_RESTORE]` | `TelegramAuthRepositoryImpl.restoreSession` | start state, session string length, success/failure with userId |
 | `[RENDERER]` | `PlayerScreen` AndroidView update | player re-attached after initialize() with playerInitialized flag |
 | `[STORAGE]` | `StorageManagementScreen` | apply action flags logged before clearing |

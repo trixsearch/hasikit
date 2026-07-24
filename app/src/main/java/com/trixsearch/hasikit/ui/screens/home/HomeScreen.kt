@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -142,6 +143,39 @@ fun HomeScreen(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                     )
                 )
+                // Search intent chips — shown when query is active and intent has structured fields
+                if (searchQuery.isNotBlank() && searchIntent != null) {
+                    val intent = searchIntent!!
+                    val chips = buildList {
+                        intent.year?.let { add("\uD83D\uDCC5 $it") }
+                        intent.audioLanguage?.let { add("\uD83D\uDD0A $it") }
+                        intent.subtitleLanguage?.let { add("\uD83D\uDCAC Sub: $it") }
+                        intent.audioType?.let { add("\uD83C\uDFB5 $it") }
+                        intent.quality?.let { add("\uD83C\uDFAC $it") }
+                    }
+                    if (chips.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            chips.forEach { label ->
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    tonalElevation = 2.dp
+                                ) {
+                                    Text(
+                                        label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 // Channel filter chips — only shown when multiple sources are available
                 if (availableSources.size > 1) {
                     Spacer(Modifier.height(8.dp))
@@ -248,10 +282,22 @@ fun HomeScreen(
                     } else if (displayVideos.isEmpty()) {
                         item {
                             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text("No results found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("No videos found for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        "Try checking spelling, changing filters, or different keywords",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp)
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Button(onClick = { navController.navigate(Screen.RequestContent.route) }) {
+                                        Icon(Icons.Default.MovieFilter, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Request Content")
+                                    }
                                 }
                             }
                         }
@@ -600,7 +646,7 @@ fun HorizontalVideoCard(
         }
     }
 
-    // Long-press context menu — View Info, Favorites, Watch Later, Download, Share, Cancel
+    // Long-press context menu — View Info, Favorites, Watch Later, Download, Share, Share Telegram Link, Cancel
     if (showContextMenu) {
         AlertDialog(
             onDismissRequest = { showContextMenu = false },
@@ -615,7 +661,22 @@ fun HorizontalVideoCard(
             },
             text = {
                 Column {
-                    // View Info
+                    // ▶ Play
+                    DropdownMenuItem(
+                        text = { Text("Play") },
+                        leadingIcon = { Icon(Icons.Default.PlayCircle, null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            showContextMenu = false
+                            if (!video.isStreamable && !video.isDownloaded) {
+                                android.widget.Toast.makeText(context, "Video must be downloaded before playback.", android.widget.Toast.LENGTH_SHORT).show()
+                                onDownloadClick()
+                            } else {
+                                onClick()
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                    // ℹ View Info
                     DropdownMenuItem(
                         text = { Text("View Info") },
                         leadingIcon = { Icon(Icons.Default.Info, null, modifier = Modifier.size(20.dp)) },
@@ -629,7 +690,7 @@ fun HorizontalVideoCard(
                         }
                     )
                     HorizontalDivider()
-                    // Favorites toggle
+                    // ❤ Favorites toggle
                     DropdownMenuItem(
                         text = { Text(if (isFavorite) "Remove from Favorites" else "Add to Favorites") },
                         leadingIcon = {
@@ -646,12 +707,12 @@ fun HorizontalVideoCard(
                         }
                     )
                     HorizontalDivider()
-                    // Watch Later toggle
+                    // ⏰ Watch Later toggle
                     DropdownMenuItem(
                         text = { Text(if (isWatchLater) "Remove from Watch Later" else "Add to Watch Later") },
                         leadingIcon = {
                             Icon(
-                                if (isWatchLater) Icons.Default.WatchLater else Icons.Default.WatchLater,
+                                Icons.Default.WatchLater,
                                 null,
                                 modifier = Modifier.size(20.dp),
                                 tint = if (isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
@@ -663,7 +724,7 @@ fun HorizontalVideoCard(
                         }
                     )
                     HorizontalDivider()
-                    // Download actions based on current state
+                    // ⬇ Download actions based on current state
                     when (downloadState) {
                         DownloadState.DOWNLOADING -> DropdownMenuItem(
                             text = { Text("Pause Download") },
@@ -687,19 +748,68 @@ fun HorizontalVideoCard(
                         )
                     }
                     HorizontalDivider()
-                    // Share
+                    // 📤 Share — share actual file if downloaded, else Telegram link, else title text
                     DropdownMenuItem(
                         text = { Text("Share") },
                         leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp)) },
                         onClick = {
                             showContextMenu = false
-                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, "${video.title} — shared from Hasikit")
+                            android.util.Log.d("HomeScreen", "[SHARE] videoId=${video.id} isDownloaded=${video.isDownloaded} localPath=${video.localPath} telegramLink=${video.telegramLink}")
+                            val shareIntent = if (video.isDownloaded && !video.localPath.isNullOrBlank()) {
+                                // Share actual video file via FileProvider
+                                try {
+                                    val file = java.io.File(video.localPath)
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                    android.util.Log.d("HomeScreen", "[SHARE] sharing file uri=$uri")
+                                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "video/*"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("HomeScreen", "[SHARE] FileProvider failed, falling back to link", e)
+                                    // Fallback to link share if FileProvider fails
+                                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, video.telegramLink ?: video.title)
+                                    }
+                                }
+                            } else if (!video.telegramLink.isNullOrBlank()) {
+                                // Share Telegram link
+                                android.util.Log.d("HomeScreen", "[SHARE] sharing telegram link=${video.telegramLink}")
+                                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\n${video.telegramLink}")
+                                }
+                            } else {
+                                // Fallback: share title + channel
+                                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "${video.title} — ${video.sourceLabel} — shared from Hasikit")
+                                }
                             }
                             context.startActivity(android.content.Intent.createChooser(shareIntent, "Share via"))
                         }
                     )
+                    // 🔗 Copy Telegram Link
+                    if (!video.telegramLink.isNullOrBlank()) {
+                        DropdownMenuItem(
+                            text = { Text("Copy Telegram Link") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(20.dp)) },
+                            onClick = {
+                                showContextMenu = false
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Telegram Link", video.telegramLink))
+                                android.util.Log.d("HomeScreen", "[SHARE] copied telegram link=${video.telegramLink}")
+                                android.widget.Toast.makeText(context, "Link copied", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
                 }
             },
             confirmButton = {},

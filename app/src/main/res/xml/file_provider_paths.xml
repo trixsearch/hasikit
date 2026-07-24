@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths for sharing downloaded video files via ACTION_SEND.
+     Covers both the default app external files dir and any SAF-selected custom path. -->
+<paths>
+    <!-- App-specific external storage: /storage/emulated/0/Android/data/com.trixsearch.hasikit/files/ -->
+    <external-files-path name="external_files" path="." />
+    <!-- External storage root for custom download paths selected via SAF -->
+    <external-path name="external_storage" path="." />
+    <!-- Internal files dir for any files stored internally -->
+    <files-path name="internal_files" path="." />
+</paths>

@@ -144,6 +144,10 @@ class HomeViewModel @Inject constructor(
                     else -> 0f
                 }
                 val thumbnail = thumbCache[media.thumbnailFileId] ?: db?.thumbnail
+                // Build Telegram message link: https://t.me/c/{positiveChannelId}/{messageId}
+                // channelId is negative for supergroups/channels; strip the -100 prefix for the link
+                val positiveChannelId = if (media.channelId < 0) -(media.channelId + 1_000_000_000_000L) else media.channelId
+                val tgLink = "https://t.me/c/$positiveChannelId/${media.messageId}"
                 Video(
                     id = id,
                     title = media.title.ifBlank { media.fileName },
@@ -156,7 +160,8 @@ class HomeViewModel @Inject constructor(
                     isDownloaded = isDownloaded,
                     downloadProgress = downloadProgress,
                     sourceLabel = page.source.displayName,
-                    isStreamable = media.isStreamable
+                    isStreamable = media.isStreamable,
+                    telegramLink = tgLink
                 )
             }
         }
@@ -166,11 +171,16 @@ class HomeViewModel @Inject constructor(
     // can both fire simultaneously on startup causing duplicate getChannelMedia requests
     @Volatile private var isLoadingAllSources = false
 
+    // Startup retry flag — TDLib sometimes returns only 1 message on first cold start
+    // because the local message database hasn't fully loaded yet. We detect this and
+    // schedule a single retry after a short delay to get the real first page.
+    @Volatile private var startupRetryScheduled = false
+
     init {
         viewModelScope.launch {
             authRepository.authState.collect { state ->
                 if (state is AuthState.Authenticated && _sourcePages.value.isEmpty() && !isLoadingAllSources) {
-                    loadAllSources()
+                    loadAllSources(isStartup = true)
                     if (AUTO_REFRESH_SECONDS > 0) startAutoRefresh()
                 }
             }
@@ -178,7 +188,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             sourceConfig.userSourcesFlow.drop(1).collect {
                 if (authRepository.authState.value is AuthState.Authenticated && !isLoadingAllSources) {
-                    loadAllSources()
+                    loadAllSources(isStartup = false)
                 }
             }
         }
@@ -220,7 +230,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun loadAllSources() {
+    private fun loadAllSources(isStartup: Boolean = false) {
         viewModelScope.launch {
             if (isLoadingAllSources) return@launch
             isLoadingAllSources = true
@@ -228,10 +238,14 @@ class HomeViewModel @Inject constructor(
             _error.value = null
             _noAccessMessage.value = null
 
+            // [FEED_STARTUP] log source fetch start
+            Log.d(TAG, "[FEED_STARTUP] loadAllSources start isStartup=$isStartup")
+
             val allSources = buildList {
                 addAll(sourceConfig.officialSources)
                 addAll(sourceConfig.userSourcesFlow.first())
             }
+            Log.d(TAG, "[FEED_STARTUP] sources=${allSources.map { it.displayName }}")
 
             val resolvedPages = allSources.map { source ->
                 async {
@@ -257,9 +271,23 @@ class HomeViewModel @Inject constructor(
                 fetchThumbnails(resolvedPages.flatMap { it.media })
             }
 
+            val totalFetched = resolvedPages.sumOf { it.media.size }
+            Log.d(TAG, "[FEED_STARTUP] loadAllSources complete: sources=${resolvedPages.size} totalVideos=$totalFetched")
+
             // isLoading=false only after pages are set so skeleton shows until data is ready
             _isLoading.value = false
             isLoadingAllSources = false
+
+            // Startup retry: TDLib cold-start sometimes returns only 1 message per channel
+            // because the local message DB hasn't fully loaded. If we got suspiciously few
+            // videos on startup, schedule a single retry after 2 seconds.
+            if (isStartup && !startupRetryScheduled && totalFetched < PAGE_SIZE && resolvedPages.isNotEmpty()) {
+                startupRetryScheduled = true
+                Log.d(TAG, "[FEED_STARTUP] cold-start undercount detected (got $totalFetched < $PAGE_SIZE) — scheduling retry in 2s")
+                delay(2000L)
+                Log.d(TAG, "[FEED_STARTUP] retry firing")
+                loadAllSources(isStartup = false)
+            }
         }
     }
 
@@ -323,9 +351,11 @@ class HomeViewModel @Inject constructor(
     }
 
     fun refresh() {
+        // Reset both guards so a manual refresh always fetches fresh data
         isLoadingAllSources = false
+        startupRetryScheduled = false
         _sourcePages.value = emptyList()
-        loadAllSources()
+        loadAllSources(isStartup = false)
     }
 
     private fun fetchThumbnails(mediaList: List<TelegramMedia>) {
@@ -393,13 +423,13 @@ class HomeViewModel @Inject constructor(
             // Parse query into structured intent
             val intent = SearchEngine.parseIntent(query)
             _searchIntent.value = intent
-            Log.d(TAG, "[SEARCH] intent: movie='${intent.movieName}' year=${intent.year} audio=${intent.audioLanguage} sub=${intent.subtitleLanguage} quality=${intent.quality} variants=${intent.toTelegramQueryVariants()}")
+            Log.d(TAG, "[SEARCH] query='$query' normalizedName='${intent.normalizedName}' year=${intent.year} audio=${intent.audioLanguage} quality=${intent.quality} variants=${intent.toTelegramQueryVariants()}")
 
             // Stage 1: Room search on IO thread — never block the UI thread
+            // Broad DB fetch first, fuzzy scoring filters/ranks below
             val localVideos = withContext(Dispatchers.IO) {
-                repository.searchVideos(intent.movieName)
-                    .first()
-                    .ifEmpty { repository.searchVideos(query).first() }
+                val byName = repository.searchVideos(intent.movieName).first()
+                if (byName.isNotEmpty()) byName else repository.searchVideos(query).first()
             }
 
             // Score and rank local results — fuzzy matching applied only to candidates
@@ -505,7 +535,9 @@ class HomeViewModel @Inject constructor(
 
             val ranked = SearchEngine.rank(allCandidates)
             val elapsed = System.currentTimeMillis() - searchStart
-            Log.d(TAG, "[SEARCH] Stage-3 ranked: ${ranked.size} results (local=${localRanked.size} telegram=${telegramResults.size}) totalTime=${elapsed}ms")
+            val accepted = ranked.size
+            val rejected = allCandidates.size - accepted
+            Log.d(TAG, "[SEARCH] done: candidates=${allCandidates.size} accepted=$accepted rejected=$rejected (local=${localRanked.size} telegram=${telegramResults.size}) totalTime=${elapsed}ms")
 
             _searchResults.value = ranked.map { it.item }
             _isSearching.value = false
@@ -533,7 +565,7 @@ class HomeViewModel @Inject constructor(
             Log.d(TAG, "addFavorite videoId=${video.id}")
             // Ensure video exists in DB before adding favorite
             repository.insertVideo(video)
-            repository.addFavorite(FavoriteEntity(videoId = video.id, addedAt = System.currentTimeMillis()))
+            repository.addFavorite(FavoriteEntity(videoId = video.id, title = video.title, thumbnail = video.thumbnail, source = video.sourceLabel, addedAt = System.currentTimeMillis()))
         }
     }
 
@@ -548,7 +580,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             Log.d(TAG, "addWatchLater videoId=${video.id}")
             repository.insertVideo(video)
-            repository.addToWatchLater(WatchLaterEntity(videoId = video.id, addedAt = System.currentTimeMillis()))
+            repository.addToWatchLater(WatchLaterEntity(videoId = video.id, title = video.title, thumbnail = video.thumbnail, source = video.sourceLabel, addedAt = System.currentTimeMillis()))
         }
     }
 

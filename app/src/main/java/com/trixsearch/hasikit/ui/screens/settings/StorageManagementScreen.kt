@@ -1,6 +1,7 @@
 package com.trixsearch.hasikit.ui.screens.settings
 
 import android.util.Log
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -194,7 +195,7 @@ fun StorageManagementScreen(
                                 Icon(Icons.Default.RestartAlt, null, tint = MaterialTheme.colorScheme.error)
                             },
                             trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                            modifier = androidx.compose.foundation.clickable(onClick = { showForceResetDialog = true })
+                            modifier = Modifier.clickable { showForceResetDialog = true }
                         )
                     }
                 }

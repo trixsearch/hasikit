@@ -109,6 +109,9 @@ app/src/main/java/com/trixsearch/hasikit/
 │   └── service/
 │       └── TelegramClientService.kt      # TDLib client lifecycle, auth state machine
 │
+├── search/
+│   └── SearchEngine.kt                   # Pure Kotlin search engine: parseIntent, normalize, score, rank, levenshtein
+│
 ├── player/
 │   └── HasikitPlayer.kt                  # Media3 ExoPlayer singleton
 │
@@ -319,7 +322,37 @@ Resolved chatIds are cached in memory to avoid re-resolution on every resume.
 ### Search
 - Stage A: `SearchChatMessages` with video type filter
 - Stage A2: `SearchChatMessages` with document type filter
-- Stage B: full channel history scan matching file name, title, caption
+- Stage B: full channel history scan — `SearchEngine.normalize()` + `score()` applied to file names, titles, captions
+
+### Smart Search V4 Pipeline
+
+```
+User types query
+        ↓
+SearchEngine.parseIntent(query)
+  → movieName, year, audioLanguage, subtitleLanguage, audioType, quality
+        ↓
+Stage 1: Room search on Dispatchers.IO — emitted immediately
+        ↓
+Stage 2: searchChannelMediaMulti(chatId, queryVariants, 100)
+  → each variant sent as separate TDLib SearchChatMessages call
+        ↓
+Stage 3: SearchEngine.scoreVideo() on all candidates
+  → score < 50 filtered, remainder sorted descending
+        ↓
+_searchResults emitted — UI updates
+```
+
+**SearchEngine scoring tiers:**
+
+| Score | Match type |
+|---|---|
+| 100 | Exact match |
+| 90 | Starts with query |
+| 80 | Contains query |
+| 78 | All query words found in candidate |
+| 60–79 | Levenshtein fuzzy — full-string or word-level similarity ≥ 0.6 |
+| < 50 | Filtered out |
 
 ---
 
@@ -438,6 +471,30 @@ Defender scanning build outputs mid-compile is a secondary cause of daemon crash
 ---
 
 ## Architecture Decisions
+
+### 2026-07-24 — Core Bug Fix Pass
+
+- Home feed startup undercount fixed: `loadAllSources(isStartup)` detects TDLib cold-start returning < PAGE_SIZE videos and retries after 2s; `startupRetryScheduled` flag prevents duplicate retries
+- `telegramLink` field added to `Video` domain model — computed from `channelId` + `messageId` as `https://t.me/c/{positiveChannelId}/{messageId}`
+- Share reworked: `FileProvider` shares actual video file when downloaded; Telegram link fallback; title+channel text fallback
+- `FileProvider` declared in `AndroidManifest.xml`; `file_provider_paths.xml` created in `res/xml/`
+- Library Favorites/Watch Later/History tabs: Play, Share, Remove actions added; History sorted newest-first
+- Long-press menu standardized: Play added at top; Copy Telegram Link added
+
+### 2026-07-21 — Smart Search V4
+
+- `SearchEngine` added as pure Kotlin object in `search/` — no Android dependencies, fully unit-testable
+- `parseIntent()` extracts structured fields (movie name, year, audio language, subtitle language, audio type, quality) from raw query
+- `toTelegramQueryVariants()` expands intent into multiple Telegram queries for broader coverage
+- `normalize()` strips codecs, resolution tags, language tokens for fuzzy file-name matching
+- Levenshtein edit distance with O(n) space (rolling array) — early-exit removed (it broke multi-word title matching)
+- `stringSimilarity()` private helper wraps levenshtein as 0.0–1.0 ratio
+- Repeated-letter collapsing in `normalize()`: runs of 2+ identical letters collapsed to 1 (baahubali→bahubali, pushpaa→pushpa, kantaraa→kantara)
+- Word-level fuzzy scoring: query words matched against individual candidate words at threshold 0.6 (fixes "poshpa" matching "Pushpa The Rise")
+- Scoring tiers: exact (100), startsWith (90), contains (80), word-all-match (78), fuzzy 60–79, filtered below 50
+- `HomeViewModel.searchTelegram` wired to 3-stage pipeline: Room → Telegram multi-query → rank
+- Search intent chips added to HomeScreen — rendered from `searchIntent` StateFlow when query has structured fields
+- `searchIntent` StateFlow exposed from `HomeViewModel` for UI consumption
 
 ### 2026-07-21 — Stability Fix Pass
 
