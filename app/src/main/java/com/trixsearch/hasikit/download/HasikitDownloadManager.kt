@@ -125,7 +125,6 @@ class HasikitDownloadManager @Inject constructor(
             Log.d(TAG, "startDownload enqueued WorkManager job for videoId=${video.id}")
         }
     }
-    }
 
     // Pause — cancels the WorkManager worker and marks state as PAUSED in DB
     fun pauseDownload(videoId: String) {
